@@ -1,0 +1,2591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel 智能合同生成系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <!-- 新增：引入 ZIP 压缩库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- 新增：PDF 识别拆分相关库（pdf.js 渲染 / pdf-lib 拆页 / tesseract.js OCR） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-light: #818cf8;
+            --primary-glow: rgba(79,70,229,0.25);
+            --accent: #06b6d4;
+            --accent-light: #67e8f9;
+            --success: #059669;
+            --success-light: #34d399;
+            --success-glow: rgba(5,150,105,0.2);
+            --bg: #f0f4ff;
+            --bg2: #e8eeff;
+            --card: #ffffff;
+            --card2: #f8f9ff;
+            --border: #dde3f8;
+            --border-active: #a5b4fc;
+            --text: #1e1b4b;
+            --text-sub: #4338ca;
+            --text-muted: #6b7280;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 40px 20px;
+            min-height: 100vh;
+            background-image: radial-gradient(circle at 20% 20%, rgba(99,102,241,0.08) 0%, transparent 50%),
+                              radial-gradient(circle at 80% 80%, rgba(6,182,212,0.07) 0%, transparent 50%);
+        }
+
+        .container { max-width: 980px; margin: 0 auto; }
+
+        /* Header */
+        .header { text-align: center; margin-bottom: 40px; }
+        .header-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--primary);
+            border: 1.5px solid var(--border-active);
+            background: rgba(99,102,241,0.07);
+            padding: 4px 16px;
+            border-radius: 20px;
+            margin-bottom: 14px;
+        }
+        .header h1 {
+            font-size: 30px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+            letter-spacing: -0.5px;
+        }
+        .header p {
+            color: var(--text-muted);
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+        }
+        .header p span { display: flex; align-items: center; gap: 5px; }
+        .header p span::before {
+            content: '';
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            display: inline-block;
+        }
+
+        /* Card */
+        .card {
+            background: var(--card);
+            border: 1.5px solid var(--border);
+            border-radius: 20px;
+            padding: 32px;
+            margin-bottom: 24px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(79,70,229,0.07), 0 1px 4px rgba(0,0,0,0.04);
+        }
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--accent), var(--primary-light));
+            background-size: 200% 100%;
+            animation: shimmer 3s linear infinite;
+        }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        /* Step boxes */
+        .step-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 28px; }
+
+        .step-box {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            padding: 28px 20px 20px;
+            text-align: center;
+            position: relative;
+            background: var(--card2);
+            transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: default;
+            overflow: hidden;
+        }
+        .step-box::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at 50% -20%, rgba(99,102,241,0.1) 0%, transparent 65%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .step-box:hover {
+            border-color: var(--border-active);
+            border-style: solid;
+            transform: translateY(-4px);
+            box-shadow: 0 12px 32px rgba(79,70,229,0.12);
+        }
+        .step-box:hover::before { opacity: 1; }
+        .step-box.active {
+            border-color: var(--primary);
+            border-style: solid;
+            background: #fff;
+            box-shadow: 0 8px 32px rgba(79,70,229,0.15);
+        }
+        .step-box.active::before { opacity: 1; }
+        .step-box.dragover {
+            border-color: var(--accent);
+            border-style: solid;
+            background: rgba(6,182,212,0.04);
+            transform: scale(1.04);
+            box-shadow: 0 0 0 4px rgba(6,182,212,0.15), 0 12px 32px rgba(6,182,212,0.15);
+        }
+
+        .step-badge {
+            position: absolute;
+            top: 12px; right: 12px;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            color: white;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            padding: 3px 10px;
+            border-radius: 20px;
+        }
+        .step-icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+            margin-top: 8px;
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .step-box:hover .step-icon { transform: scale(1.2) rotate(-5deg); }
+        .step-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+        .step-desc { font-size: 11px; color: var(--text-muted); margin-bottom: 14px; }
+        .drag-hint { font-size: 10px; color: #c7d2fe; margin-top: 6px; pointer-events: none; }
+
+        input[type="file"] { display: none; }
+
+        .upload-btn-custom {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: white;
+            border: 1.5px solid var(--border-active);
+            color: var(--primary);
+            padding: 8px 18px;
+            border-radius: 8px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 600;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(79,70,229,0.1);
+        }
+        .upload-btn-custom::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .upload-btn-custom:hover {
+            color: white;
+            border-color: transparent;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(79,70,229,0.3);
+        }
+        .upload-btn-custom:hover::after { opacity: 1; }
+        .upload-btn-custom span { position: relative; z-index: 1; }
+
+        .file-name-display {
+            margin-top: 10px;
+            font-size: 11px;
+            color: var(--primary);
+            font-weight: 600;
+            word-break: break-all;
+            min-height: 18px;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Actions */
+        .actions { text-align: center; margin: 24px 0 4px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+        .btn {
+            border: none;
+            padding: 13px 32px;
+            font-size: 15px;
+            font-weight: 700;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            position: relative;
+            overflow: hidden;
+            letter-spacing: 0.3px;
+        }
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 0; height: 0;
+            background: rgba(255,255,255,0.25);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: width 0.5s, height 0.5s;
+        }
+        .btn:active::before { width: 300px; height: 300px; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            color: white;
+            box-shadow: 0 4px 20px var(--primary-glow), 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .btn-primary:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 10px 30px rgba(79,70,229,0.35); }
+        .btn-primary:active { transform: translateY(0) scale(0.98); }
+        .btn-primary:disabled {
+            background: linear-gradient(135deg, #e5e7eb, #d1d5db);
+            color: #9ca3af;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* 新增：归档按钮的紫韵风格 */
+        .btn-export {
+            background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
+            color: white;
+            box-shadow: 0 4px 20px rgba(139,92,246,0.3);
+        }
+        .btn-export:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 10px 30px rgba(139,92,246,0.4); }
+        .btn-export:disabled { background: linear-gradient(135deg, #e5e7eb, #d1d5db); color: #9ca3af; cursor: not-allowed; box-shadow: none; transform: none; }
+
+        /* 新增：PDF 识别按钮（青橙渐变，区别于其它功能） */
+        .btn-pdf {
+            background: linear-gradient(135deg, #0ea5e9 0%, #f59e0b 100%);
+            color: white;
+            box-shadow: 0 4px 20px rgba(14,165,233,0.3);
+        }
+        .btn-pdf:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 10px 30px rgba(14,165,233,0.4); }
+        .btn-pdf:disabled { background: linear-gradient(135deg, #e5e7eb, #d1d5db); color: #9ca3af; cursor: not-allowed; box-shadow: none; transform: none; }
+
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--success) 0%, var(--success-light) 100%);
+            color: white;
+            display: none;
+            box-shadow: 0 4px 20px var(--success-glow);
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .btn-success:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 10px 30px rgba(5,150,105,0.3); }
+
+        @keyframes popIn {
+            0% { transform: scale(0.6) rotate(-5deg); opacity: 0; }
+            70% { transform: scale(1.05) rotate(1deg); }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+
+        /* Terminal */
+        .terminal {
+            background: #1a1d2e;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(79,70,229,0.15), 0 4px 16px rgba(0,0,0,0.1);
+            border: 1px solid rgba(99,102,241,0.2);
+        }
+        .terminal-header {
+            background: #13152a;
+            border-bottom: 1px solid rgba(99,102,241,0.15);
+            padding: 12px 16px;
+            display: flex;
+            gap: 7px;
+            align-items: center;
+        }
+        .dot { width: 11px; height: 11px; border-radius: 50%; cursor: pointer; transition: filter 0.2s; }
+        .dot:hover { filter: brightness(1.3); }
+        .dot.r { background: #ff5f56; }
+        .dot.y { background: #ffbd2e; }
+        .dot.g { background: #27c93f; }
+        .terminal-title { margin-left: 8px; color: rgba(165,180,252,0.5); font-size: 11px; font-family: monospace; letter-spacing: 1px; }
+        .terminal-status {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+            color: #34d399;
+            font-family: monospace;
+            letter-spacing: 0.5px;
+        }
+        .terminal-status::before {
+            content: '';
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #34d399;
+            box-shadow: 0 0 6px #34d399;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        .log-box {
+            padding: 16px 20px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 12.5px;
+            line-height: 1.75;
+            color: #94a3b8;
+        }
+        .log-box::-webkit-scrollbar { width: 4px; }
+        .log-box::-webkit-scrollbar-track { background: transparent; }
+        .log-box::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 2px; }
+
+        .log-success { color: #34d399; }
+        .log-warning { color: #fbbf24; }
+        .log-error { color: #f87171; }
+        .log-info { color: #818cf8; }
+        .log-time { color: #374151; margin-right: 8px; font-size: 11px; }
+        .log-prefix { color: rgba(99,102,241,0.6); margin-right: 4px; }
+
+        /* Spinner */
+        .spinner {
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-top-color: white;
+            animation: spin 0.7s linear infinite;
+            display: none;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Progress bar */
+        .progress-bar-wrap {
+            height: 3px;
+            background: rgba(99,102,241,0.1);
+            border-radius: 2px;
+            margin-top: 20px;
+            overflow: hidden;
+            display: none;
+        }
+        .progress-bar-wrap.visible { display: block; }
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+            border-radius: 2px;
+            transition: width 0.3s ease;
+            box-shadow: 0 0 8px rgba(6,182,212,0.5);
+        }
+        .progress-bar.indeterminate {
+            width: 40%;
+            animation: indeterminate 1.4s ease-in-out infinite;
+        }
+        @keyframes indeterminate {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(350%); }
+        }
+
+        /* Global Loading Overlay */
+        .global-loading {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(240, 244, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.35s ease;
+        }
+        .global-loading.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .gl-card {
+            background: white;
+            border-radius: 24px;
+            padding: 44px 52px;
+            text-align: center;
+            box-shadow: 0 24px 80px rgba(79,70,229,0.18), 0 4px 16px rgba(0,0,0,0.06);
+            border: 1.5px solid var(--border);
+            position: relative;
+            overflow: hidden;
+            animation: glCardIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .global-loading.show .gl-card { animation: glCardIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        @keyframes glCardIn {
+            from { transform: scale(0.8) translateY(20px); opacity: 0; }
+            to   { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        .gl-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--accent), var(--primary-light));
+            background-size: 200% 100%;
+            animation: shimmer 1.5s linear infinite;
+        }
+        .gl-dog {
+            font-size: 64px;
+            display: block;
+            margin-bottom: 16px;
+            animation: dogBounce 0.6s ease-in-out infinite alternate;
+            filter: drop-shadow(0 8px 16px rgba(79,70,229,0.2));
+        }
+        @keyframes dogBounce {
+            from { transform: translateY(0) rotate(-4deg); }
+            to   { transform: translateY(-10px) rotate(4deg); }
+        }
+        .gl-title {
+            font-size: 20px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 6px;
+            letter-spacing: -0.3px;
+        }
+        .gl-sub {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 28px;
+        }
+        .gl-dots {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        .gl-dots span {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            animation: dotPulse 1.2s ease-in-out infinite;
+        }
+        .gl-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .gl-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes dotPulse {
+            0%, 100% { transform: scale(0.6); opacity: 0.4; }
+            50%       { transform: scale(1.2); opacity: 1; }
+        }
+        .gl-progress {
+            width: 220px;
+            height: 4px;
+            background: rgba(99,102,241,0.1);
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 0 auto;
+        }
+        .gl-progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+            border-radius: 2px;
+            transition: width 0.1s linear;
+            box-shadow: 0 0 8px rgba(6,182,212,0.5);
+        }
+
+        .btn-prank {
+            background: linear-gradient(135deg, #f59e0b, #ef4444);
+            color: white;
+            box-shadow: 0 4px 20px rgba(245,158,11,0.3);
+        }
+        .btn-prank:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 10px 30px rgba(245,158,11,0.4); }
+
+        /* Prank toggle */
+        .prank-toggle-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: white;
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 18px;
+            box-shadow: 0 2px 8px rgba(79,70,229,0.07);
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s;
+        }
+        .prank-toggle-wrap:hover { border-color: var(--border-active); box-shadow: 0 4px 16px rgba(79,70,229,0.12); }
+        .prank-toggle-label { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
+        .prank-toggle-label span { font-size: 16px; margin-right: 4px; }
+        .toggle-switch {
+            position: relative;
+            width: 40px; height: 22px;
+            flex-shrink: 0;
+        }
+        .toggle-switch input { display: none; }
+        .toggle-track {
+            position: absolute;
+            inset: 0;
+            border-radius: 11px;
+            background: #e5e7eb;
+            transition: background 0.25s;
+        }
+        .toggle-thumb {
+            position: absolute;
+            top: 3px; left: 3px;
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: white;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+            transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .toggle-switch input:checked ~ .toggle-track { background: linear-gradient(135deg, var(--primary), var(--accent)); }
+        .toggle-switch input:checked ~ .toggle-thumb { transform: translateX(18px); }
+
+        /*FX_CSS_TODO*/
+
+        /* ============ 炫酷特效模块 ============ */
+        /* 烟花/粒子画布：覆盖全屏，置于内容下方 */
+        #fxCanvas {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+        body { position: relative; }
+        .container { position: relative; z-index: 10; }
+
+        /* 鼠标拖尾粒子 */
+        .fx-trail {
+            position: fixed;
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 9990;
+            mix-blend-mode: screen;
+            will-change: transform, opacity;
+        }
+
+        /* 漂浮表情：底部缓缓飘起 */
+        .fx-float {
+            position: fixed;
+            bottom: -40px;
+            font-size: 28px;
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0;
+            user-select: none;
+            filter: drop-shadow(0 4px 12px rgba(99,102,241,0.25));
+            animation: fxFloatUp linear forwards;
+        }
+        @keyframes fxFloatUp {
+            0%   { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0; }
+            10%  { opacity: 0.9; }
+            50%  { transform: translateY(-50vh) translateX(var(--fx-sway, 30px)) rotate(180deg); opacity: 0.8; }
+            100% { transform: translateY(-110vh) translateX(calc(var(--fx-sway, 30px) * -1)) rotate(360deg); opacity: 0; }
+        }
+
+        /* 彩纸雨 */
+        .fx-confetti {
+            position: fixed;
+            top: -20px;
+            width: 10px; height: 14px;
+            pointer-events: none;
+            z-index: 9000;
+            border-radius: 2px;
+            opacity: 0.9;
+            will-change: transform;
+            animation: fxConfettiFall linear forwards;
+        }
+        @keyframes fxConfettiFall {
+            0%   { transform: translateY(0) rotateZ(0deg) rotateX(0deg); }
+            100% { transform: translateY(110vh) rotateZ(720deg) rotateX(720deg); }
+        }
+
+        /* 文字爆炸（点击标题） */
+        .fx-pop-char {
+            position: fixed;
+            font-weight: 800;
+            font-size: 18px;
+            pointer-events: none;
+            z-index: 9500;
+            will-change: transform, opacity;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* 控制按钮：右下角悬浮 */
+        .fx-toolbar {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .fx-btn {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            border: 1.5px solid var(--border-active);
+            background: rgba(255,255,255,0.92);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            cursor: pointer;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 16px rgba(79,70,229,0.18);
+            transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s;
+            user-select: none;
+        }
+        .fx-btn:hover { transform: scale(1.12) rotate(-8deg); box-shadow: 0 8px 24px rgba(79,70,229,0.3); }
+        .fx-btn:active { transform: scale(0.92); }
+        .fx-btn.active {
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            color: white;
+            border-color: transparent;
+            box-shadow: 0 6px 20px rgba(79,70,229,0.4);
+        }
+
+        /* 派对模式：彩虹渐变背景 */
+        body.party-mode {
+            animation: partyBg 8s linear infinite;
+        }
+        @keyframes partyBg {
+            0%   { background-color: #fff0f5; }
+            16%  { background-color: #fff4e6; }
+            33%  { background-color: #f0fff4; }
+            50%  { background-color: #e6f7ff; }
+            66%  { background-color: #f3e8ff; }
+            83%  { background-color: #ffe4e1; }
+            100% { background-color: #fff0f5; }
+        }
+        body.party-mode .card { animation: partyCardSpin 4s ease-in-out infinite; }
+        @keyframes partyCardSpin {
+            0%, 100% { transform: rotate(0deg); }
+            25%      { transform: rotate(0.5deg); }
+            75%      { transform: rotate(-0.5deg); }
+        }
+
+        /* 卡片 3D 倾斜 */
+        .card {
+            transform-style: preserve-3d;
+            transition: transform 0.15s ease-out, box-shadow 0.3s;
+        }
+        .card.fx-tilt {
+            box-shadow:
+                0 12px 40px rgba(79,70,229,0.18),
+                0 4px 16px rgba(0,0,0,0.06);
+        }
+
+        /* Toast 提示 */
+        .fx-toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-80px);
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            color: white;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: 700;
+            box-shadow: 0 8px 32px rgba(79,70,229,0.3);
+            z-index: 99999;
+            opacity: 0;
+            pointer-events: none;
+            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s;
+            white-space: nowrap;
+        }
+        .fx-toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        /* 标题悬浮波动 */
+        .header h1 { transition: transform 0.2s; cursor: pointer; user-select: none; }
+        .header h1:hover { transform: scale(1.04) translateY(-2px); }
+
+        /* 终端绿点旋转 */
+        .terminal-status:hover { transform: scale(1.1); }
+    </style>
+</head>
+<body>
+
+<!-- 特效画布（烟花/星辰/烟雾） -->
+<canvas id="fxCanvas"></canvas>
+
+<!-- 特效控制工具栏 -->
+<div class="fx-toolbar">
+    <div class="fx-btn" id="fxBtnFireworks" title="自动烟花 (F)">🎆</div>
+    <div class="fx-btn" id="fxBtnStars" title="星空背景 (S)">✨</div>
+    <div class="fx-btn" id="fxBtnTrail" title="鼠标拖尾 (T)">🌈</div>
+    <div class="fx-btn" id="fxBtnFloat" title="飘浮表情 (E)">🐶</div>
+    <div class="fx-btn" id="fxBtnConfetti" title="撒一把彩纸 (C)">🎉</div>
+    <div class="fx-btn" id="fxBtnParty" title="派对模式 (P)">🎊</div>
+    <div class="fx-btn" id="fxBtnClear" title="关闭所有特效">⏹️</div>
+</div>
+
+<!-- Toast -->
+<div class="fx-toast" id="fxToast"></div>
+
+<div class="container">
+    <div class="header">
+        <div class="header-badge">INTELLIGENT CONTRACT ENGINE</div>
+        <h1>Excel 智能合同生成系统</h1>
+        <p>
+            <span>合计公式智能拉伸</span>
+            <span>独立引用自动平移</span>
+            <span>支持一键导出归档文件夹</span>
+        </p>
+    </div>
+
+    <div class="card">
+        <div class="step-group">
+            <div class="step-box" id="boxA">
+                <div class="step-badge">STEP 01</div>
+                <div class="step-icon">📁</div>
+                <div class="step-title">导入数据源</div>
+                <div class="step-desc">A表: 进口委托单 (可多选)</div>
+                <label class="upload-btn-custom"><span>选择文件</span><input type="file" id="fileA" accept=".xlsx" multiple onchange="updateFileName('fileA', 'nameA', 'boxA')"></label>
+                <div class="drag-hint">或将文件拖入此区域</div>
+                <div class="file-name-display" id="nameA">未上传文件</div>
+            </div>
+            <div class="step-box" id="boxB">
+                <div class="step-badge">STEP 02</div>
+                <div class="step-icon">📋</div>
+                <div class="step-title">导入任务清单</div>
+                <div class="step-desc">B表: 决定合同与归档顺序</div>
+                <label class="upload-btn-custom"><span>选择文件</span><input type="file" id="fileB" accept=".xlsx" onchange="updateFileName('fileB', 'nameB', 'boxB')"></label>
+                <div class="drag-hint">或将文件拖入此区域</div>
+                <div class="file-name-display" id="nameB">未上传文件</div>
+            </div>
+            <div class="step-box" id="boxC">
+                <div class="step-badge">STEP 03</div>
+                <div class="step-icon">📄</div>
+                <div class="step-title">导入合同模板</div>
+                <div class="step-desc">C表: 已默认载入，无需手动选择<br><span style="color:var(--primary);font-weight:600;">如需更换模板可自行上传覆盖</span></div>
+                <label class="upload-btn-custom"><span>更换模板</span><input type="file" id="fileC" accept=".xlsx" onchange="updateFileName('fileC', 'nameC', 'boxC')"></label>
+                <div class="drag-hint">或将文件拖入此区域</div>
+                <div class="file-name-display" id="nameC">未上传文件</div>
+            </div>
+        </div>
+        <div class="progress-bar-wrap" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
+        
+        <div class="actions">
+            <button id="btnGenerate" class="btn btn-primary" onclick="startProcess()">
+                <div class="spinner" id="loadingSpinner"></div><span id="btnText">开始无损流式生成</span>
+            </button>
+
+            <!-- 导出文件夹 ZIP -->
+            <button id="btnExportFolders" class="btn btn-export" onclick="exportFoldersZip()">
+                <div class="spinner" id="loadingSpinnerExp"></div><span id="btnTextExp">📦 导出归档文件夹</span>
+            </button>
+
+            <label class="prank-toggle-wrap" title="开启后点击生成会显示 Loading">
+                <div class="prank-toggle-label"><span>🐶</span>Loading</div>
+                <div class="toggle-switch">
+                    <input type="checkbox" id="prankToggle" onchange="savePrankToggle()">
+                    <div class="toggle-track"></div>
+                    <div class="toggle-thumb"></div>
+                </div>
+            </label>
+            <button id="btnDownload" class="btn btn-success" onclick="downloadExcel()">导出最终合同汇总</button>
+        </div>
+    </div>
+
+    <!-- ============ 新增：独立的 PDF 识别拆分模块（不影响以上功能） ============ -->
+    <div class="card">
+        <div class="step-group" style="grid-template-columns: 1fr;">
+            <div class="step-box" id="boxPdf">
+                <div class="step-badge" style="background: linear-gradient(135deg,#0ea5e9,#f59e0b);">PDF 模块</div>
+                <div class="step-icon">📑</div>
+                <div class="step-title">导入待拆分 PDF（扫描件）</div>
+                <div class="step-desc">逐页 OCR 识别「合同编号 / 合同号码」，按编号拆分归档（可多选多个 PDF）<br><span style="color:var(--primary);font-weight:600;">同时上传 STEP 01 的 A 表 + STEP 02 的 B 表：自动校正 OCR 编号，并将拆分 PDF 与归档文件夹(含 A 原文件)合并为同一个 ZIP</span></div>
+                <label class="upload-btn-custom"><span>选择 PDF</span><input type="file" id="filePdf" accept=".pdf" multiple onchange="updatePdfName()"></label>
+                <div class="drag-hint">或将 PDF 拖入此区域</div>
+                <div class="file-name-display" id="namePdf">未上传文件</div>
+            </div>
+        </div>
+
+        <div class="progress-bar-wrap" id="pdfProgressWrap"><div class="progress-bar" id="pdfProgressBar"></div></div>
+
+        <div class="actions">
+            <button id="btnPdfSplit" class="btn btn-pdf" onclick="startPdfSplit()">
+                <div class="spinner" id="loadingSpinnerPdf"></div><span id="btnTextPdf">🔍 识别并拆分 PDF</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="terminal">
+        <div class="terminal-header">
+            <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+            <div class="terminal-title">SYSTEM EXECUTION LOGS</div>
+            <div class="terminal-status">ONLINE</div>
+        </div>
+        <div class="log-box" id="logBox"><span class="log-info"><span class="log-prefix">›</span> System initialized. Awaiting files...</span><br></div>
+    </div>
+</div>
+
+<!-- 全局整蛊 Loading -->
+<div class="global-loading" id="globalLoading">
+    <div class="gl-card">
+        <span class="gl-dog">🐶</span>
+        <div class="gl-title">菲尼狗点子正在生成中...</div>
+        <div class="gl-sub">请稍候，正在全力运算，请勿关闭页面</div>
+        <div class="gl-dots">
+            <span></span><span></span><span></span>
+        </div>
+        <div class="gl-progress"><div class="gl-progress-bar" id="glProgressBar"></div></div>
+    </div>
+</div>
+
+<script>
+    // --- 整蛊 Loading ---
+    function savePrankToggle() {
+        localStorage.setItem('prankLoading', document.getElementById('prankToggle').checked ? '1' : '0');
+    }
+    function initPrankToggle() {
+        const saved = localStorage.getItem('prankLoading');
+        document.getElementById('prankToggle').checked = saved === null ? true : saved === '1';
+    }
+    function showPrankLoading() {
+        const overlay = document.getElementById('globalLoading');
+        const bar = document.getElementById('glProgressBar');
+        overlay.classList.add('show');
+        bar.style.width = '0%';
+        let start = null;
+        const duration = 3000;
+        function step(ts) {
+            if (!start) start = ts;
+            const pct = Math.min((ts - start) / duration * 100, 100);
+            bar.style.width = pct + '%';
+            if (pct < 100) requestAnimationFrame(step);
+            else setTimeout(() => overlay.classList.remove('show'), 300);
+        }
+        requestAnimationFrame(step);
+    }
+
+    // --- 拖放与 UI 交互模块 ---
+    function initDragAndDrop() {
+        ['boxA','boxB','boxC'].forEach((id, idx) => bindDragZone(id, ['fileA','fileB','fileC'][idx], ['nameA','nameB','nameC'][idx]));
+        // 新增：PDF 拖放区
+        bindDragZone('boxPdf', 'filePdf', 'namePdf');
+    }
+    function bindDragZone(boxId, inputId, displayId) {
+        const dropZone = document.getElementById(boxId), fileInput = document.getElementById(inputId);
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eName => dropZone.addEventListener(eName, e => {e.preventDefault(); e.stopPropagation();}, false));
+        ['dragenter', 'dragover'].forEach(eName => dropZone.addEventListener(eName, () => dropZone.classList.add('dragover'), false));
+        ['dragleave', 'drop'].forEach(eName => dropZone.addEventListener(eName, () => dropZone.classList.remove('dragover'), false));
+        dropZone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer; if(dt.files.length === 0) return;
+            if (!fileInput.hasAttribute('multiple') && dt.files.length > 1) {
+                const dtNew = new DataTransfer(); dtNew.items.add(dt.files[0]); fileInput.files = dtNew.files;
+            } else { fileInput.files = dt.files; }
+            updateFileName(inputId, displayId, boxId);
+        }, false);
+    }
+    window.addEventListener('DOMContentLoaded', () => { initDragAndDrop(); initPrankToggle(); loadDefaultTemplate(); });
+
+    // —— 默认模板：部署到线上服务后，自动从服务器拉取并默认选中 STEP 03 模板 ——
+    // 路径相对当前页面；用户仍可手动上传覆盖。注意：需经 http(s) 访问（直接 file:// 打开会被浏览器拦截 fetch）。
+    const DEFAULT_TEMPLATE_URL = 'ceshi/模板.xlsx';
+    let defaultTemplateFile = null;   // 缓存成 File 对象，供 startProcess 使用
+    async function loadDefaultTemplate() {
+        const display = document.getElementById('nameC');
+        const box = document.getElementById('boxC');
+        try {
+            display.innerText = '正在载入默认模板...';
+            const resp = await fetch(DEFAULT_TEMPLATE_URL, { cache: 'no-cache' });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const blob = await resp.blob();
+            const fname = decodeURIComponent(DEFAULT_TEMPLATE_URL.split('/').pop());
+            // 包装成 File 注入到 input，使后续逻辑与「手动上传」完全一致
+            defaultTemplateFile = new File([blob], fname, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const fileC = document.getElementById('fileC');
+            try {
+                const dt = new DataTransfer();
+                dt.items.add(defaultTemplateFile);
+                fileC.files = dt.files;
+            } catch (e) { /* 个别浏览器禁止给 input.files 赋值，已有 defaultTemplateFile 兜底 */ }
+            box.classList.add('active');
+            display.innerText = '✓ 默认模板：' + fname;
+            log('已自动载入默认模板 [' + fname + ']（' + fmtBytes(blob.size) + '），可直接生成或手动上传覆盖', 'success');
+        } catch (err) {
+            display.innerText = '默认模板载入失败，请手动上传';
+            box.classList.remove('active');
+            log('默认模板载入失败（' + err.message + '）：请确认已部署到线上服务，且 ' + DEFAULT_TEMPLATE_URL + ' 可访问；或手动上传模板', 'warning');
+        }
+    }
+
+    function updateFileName(inputId, displayId, boxId) {
+        const input = document.getElementById(inputId), display = document.getElementById(displayId), box = document.getElementById(boxId);
+        if (input.files.length === 0) { display.innerText = "未上传文件"; box.classList.remove('active'); return; }
+        box.classList.add('active'); display.innerText = input.files.length === 1 ? input.files[0].name : `已放入 ${input.files.length} 个文件`;
+    }
+
+    function toggleLoading(isLoading) {
+        document.getElementById('btnGenerate').disabled = isLoading;
+        document.getElementById('btnExportFolders').disabled = isLoading;
+        document.getElementById('loadingSpinner').style.display = isLoading ? 'block' : 'none';
+        document.getElementById('btnText').innerText = isLoading ? '正在拉伸公式排版...' : '重新生成';
+        if(isLoading) document.getElementById('btnDownload').style.display = 'none';
+        const wrap = document.getElementById('progressWrap');
+        const bar = document.getElementById('progressBar');
+        if (isLoading) {
+            wrap.classList.add('visible');
+            bar.classList.add('indeterminate');
+        } else {
+            bar.classList.remove('indeterminate');
+            bar.style.width = '100%';
+            setTimeout(() => { wrap.classList.remove('visible'); bar.style.width = '0%'; }, 800);
+        }
+    }
+
+    const logBox = document.getElementById('logBox');
+    function log(msg, type = 'normal') {
+        let colors = { 'success':'log-success', 'warning':'log-warning', 'error':'log-error', 'info':'log-info' };
+        const prefix = type === 'success' ? '✓' : type === 'error' ? '✗' : type === 'warning' ? '!' : '›';
+        logBox.innerHTML += `<span class="log-time">${new Date().toLocaleTimeString()}</span><span class="${colors[type]||''}"><span class="log-prefix">${prefix}</span> ${msg}</span><br>`;
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // --- 日志增强工具：耗时格式化 / 字节格式化 / 分隔标题 ---
+    function fmtMs(ms) {
+        if (ms == null || isNaN(ms)) return '-';
+        if (ms < 1000) return `${Math.round(ms)}ms`;
+        if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
+        const m = Math.floor(ms / 60000), s = ((ms % 60000) / 1000).toFixed(1);
+        return `${m}分${s}秒`;
+    }
+    function fmtBytes(b) {
+        if (b == null || isNaN(b)) return '-';
+        if (b < 1024) return `${b}B`;
+        if (b < 1048576) return `${(b / 1024).toFixed(1)}KB`;
+        return `${(b / 1048576).toFixed(2)}MB`;
+    }
+    // 在终端输出一条醒目的分隔标题行，便于区分各阶段
+    function logSection(title) {
+        log(`━━━━━━━━━━ ${title} ━━━━━━━━━━`, 'info');
+    }
+
+    // --- 核心工具 ---
+    function readFileAsBuffer(file) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsArrayBuffer(file); }); }
+    function getCellValue(cell) {
+        if (!cell || cell.value === null || cell.value === undefined) return '';
+        if (cell.value.richText) return cell.value.richText.map(rt => rt.text).join('');
+        if (cell.value.result !== undefined) return cell.value.result; return cell.value;
+    }
+    function cleanStr(val) { return String(val).replace(/\s+/g, "").trim().toLowerCase(); }
+    
+    function shiftFormula(formula, rowOffset, baseRow) {
+        if (!formula) return formula;
+        return formula.replace(/(\$?[A-Za-z]+)(\$?\d+)/g, (match, col, rowFull) => {
+            if (rowFull.startsWith('$')) return match; 
+            let r = parseInt(rowFull);
+            if (r < baseRow) return match; 
+            return col + (r + rowOffset);
+        });
+    }
+
+    function adjustBottomFormula(formula, baseRow, offset) {
+        if (!formula) return formula;
+        formula = formula.replace(/(SUM|AVERAGE|MAX|MIN)\(\s*([A-Za-z]+)(\d+)\s*\)/g, (match, func, col, row) => {
+            if (parseInt(row) === baseRow) return `${func}(${col}${row}:${col}${row})`;
+            return match;
+        });
+        let regex = /([A-Za-z]+)(\d+)(?::([A-Za-z]+)(\d+))?/g;
+        return formula.replace(regex, (match, c1, r1, c2, r2) => {
+            let row1 = parseInt(r1);
+            if (c2 !== undefined && r2 !== undefined) {
+                let row2 = parseInt(r2);
+                let newRow1 = (row1 > baseRow) ? row1 + offset : row1;
+                let newRow2 = (row2 >= baseRow) ? row2 + offset : row2;
+                return `${c1}${newRow1}:${c2}${newRow2}`;
+            } else {
+                let newRow1 = (row1 > baseRow) ? row1 + offset : row1;
+                return `${c1}${newRow1}`;
+            }
+        });
+    }
+
+    function decodeCell(ref) { const match = ref.match(/^([A-Za-z]+)(\d+)$/); return match ? { colStr: match[1], row: parseInt(match[2]) } : null; }
+
+    function adjustPrintArea(area, baseRow, offset) {
+        if (!area || offset === 0) return area;
+        return area.replace(/(\$?[A-Za-z]+)(\$?)(\d+)/g, (m, col, dollar, rowStr) => {
+            let r = parseInt(rowStr);
+            let newR = (r >= baseRow) ? r + offset : r;
+            return col + dollar + newR;
+        });
+    }
+
+    function isHeaderRow(rowStr) {
+        let count = 0;
+        if (rowStr.includes("品名")) count++; if (rowStr.includes("规格")) count++;
+        if (rowStr.includes("数量")) count++; if (rowStr.includes("单价")) count++;
+        if (rowStr.includes("原产地")) count++; return count >= 2;
+    }
+
+    async function parseAFiles(files) {
+        let dataMap = {};
+        const t0 = performance.now();
+        logSection(`解析 A 表数据源（共 ${files.length} 个文件）`);
+        let okFiles = 0, failFiles = 0, totalDetailRows = 0;
+        for (let i = 0; i < files.length; i++) {
+            const ft0 = performance.now();
+            log(`[${i + 1}/${files.length}] 正在读取: ${files[i].name}（${fmtBytes(files[i].size)}）`, 'info');
+            try {
+                let wb = new ExcelJS.Workbook(); await wb.xlsx.load(await readFileAsBuffer(files[i]));
+                let ws = wb.worksheets[0];
+                log(`    工作表「${ws.name}」共 ${ws.rowCount} 行 × ${ws.columnCount} 列`, 'normal');
+                let custOrderNo = null, consumerUnit = null, aHeaderMap = {}, details = [], inDetailArea = false;
+                let headerRowNum = -1;
+                ws.eachRow((row, rowNum) => {
+                    let rowFullText = row.values.map(v => cleanStr(getCellValue({value: v}))).join("");
+
+                    // 寻址：提取委托单号和消费使用单位
+                    if (!custOrderNo || !consumerUnit) {
+                        row.eachCell((cell, colNum) => {
+                            let cellValStr = cleanStr(getCellValue(cell));
+                            if (!custOrderNo && cellValStr.includes("委托单号")) {
+                                for(let k = colNum + 1; k <= colNum + 5; k++) {
+                                    let rightVal = getCellValue(row.getCell(k));
+                                    if (cleanStr(rightVal) !== "") { custOrderNo = String(rightVal).trim(); break; }
+                                }
+                            }
+                            if (!consumerUnit && cellValStr.includes("消费使用单位")) {
+                                for(let k = colNum + 1; k <= colNum + 5; k++) {
+                                    let rightVal = getCellValue(row.getCell(k));
+                                    if (cleanStr(rightVal) !== "") { consumerUnit = String(rightVal).trim(); break; }
+                                }
+                            }
+                        });
+                    }
+
+                    if (!inDetailArea && isHeaderRow(rowFullText)) {
+                        inDetailArea = true;
+                        headerRowNum = rowNum;
+                        row.eachCell((cell, colNum) => { let hName = cleanStr(getCellValue(cell)); if (hName) aHeaderMap[colNum] = hName; });
+                        log(`    第 ${rowNum} 行识别为表头，列字段: ${Object.values(aHeaderMap).join(' | ')}`, 'normal');
+                        return;
+                    }
+
+                    if (inDetailArea) {
+                        if (rowFullText.includes("合计")) { inDetailArea = false; return; }
+                        let rowData = {}, hasData = false;
+                        for (let colIdx in aHeaderMap) {
+                            let cellVal = getCellValue(row.getCell(Number(colIdx)));
+                            rowData[aHeaderMap[colIdx]] = cellVal;
+                            if (cleanStr(cellVal) !== "") hasData = true;
+                        }
+                        if (hasData) details.push(rowData);
+                    }
+                });
+
+                // 寻址结果回报：缺字段时给出告警，便于排查
+                if (custOrderNo) log(`    ✓ 委托单号: [${custOrderNo}]`, 'normal');
+                else log(`    未找到「委托单号」字段`, 'warning');
+                if (consumerUnit) log(`    ✓ 消费使用单位: [${consumerUnit}]`, 'normal');
+                else log(`    未找到「消费使用单位」字段`, 'warning');
+
+                if (custOrderNo && details.length > 0) {
+                    // 同时存储消费使用单位和明细数据
+                    dataMap[custOrderNo] = { details: details, consumerUnit: consumerUnit || "" };
+                    totalDetailRows += details.length;
+                    okFiles++;
+                    log(`解析 A表: 提取单号 [${custOrderNo}] 明细 ${details.length} 行，耗时 ${fmtMs(performance.now() - ft0)}`, 'success');
+                } else {
+                    failFiles++;
+                    log(`跳过该文件：${!custOrderNo ? '未提取到委托单号' : '明细区域为 0 行'}（耗时 ${fmtMs(performance.now() - ft0)}）`, 'warning');
+                }
+            } catch (err) { failFiles++; log(`读取 A表失败: ${files[i].name} → ${err.message}`, 'error'); }
+        }
+        log(`A 表解析汇总：成功 ${okFiles} 个 / 跳过失败 ${failFiles} 个，累计明细 ${totalDetailRows} 行，唯一单号 ${Object.keys(dataMap).length} 个，总耗时 ${fmtMs(performance.now() - t0)}`, 'success');
+        return dataMap;
+    }
+
+    function buildContractSheet(wbFinal, templateSheet, targetSheetName, aDataArray, targetContractNo, cHeaderMap, cDetailStartRow, safeAreaStartCol, consumerUnit) {
+        const newSheet = wbFinal.addWorksheet(targetSheetName);
+        const rowCount = aDataArray.length;
+        const offset = rowCount > 1 ? rowCount - 1 : 0;
+        newSheet.columns = templateSheet.columns.map(col => ({ width: col.width, hidden: col.hidden }));
+
+        if (templateSheet.pageSetup) {
+            newSheet.pageSetup = JSON.parse(JSON.stringify(templateSheet.pageSetup));
+            if (newSheet.pageSetup.printArea) {
+                newSheet.pageSetup.printArea = adjustPrintArea(newSheet.pageSetup.printArea, cDetailStartRow, offset);
+            }
+            if (newSheet.pageSetup.printTitlesRow) {
+                newSheet.pageSetup.printTitlesRow = adjustPrintArea(newSheet.pageSetup.printTitlesRow, cDetailStartRow, offset);
+            }
+        }
+        if (templateSheet.headerFooter) newSheet.headerFooter = JSON.parse(JSON.stringify(templateSheet.headerFooter));
+        if (templateSheet.properties) {
+            newSheet.properties.defaultRowHeight = templateSheet.properties.defaultRowHeight;
+            newSheet.properties.defaultColWidth = templateSheet.properties.defaultColWidth;
+        }
+        if (templateSheet.views) newSheet.views = JSON.parse(JSON.stringify(templateSheet.views));
+
+        templateSheet.eachRow({ includeEmpty: true }, (row, rowNum) => {
+            if (rowNum < cDetailStartRow) {
+                const newRow = newSheet.getRow(rowNum);
+                newRow.height = row.height; newRow.hidden = row.hidden;
+                row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+                    const newCell = newRow.getCell(colNum);
+                    newCell.value = cell.value;
+                    newCell.style = JSON.parse(JSON.stringify(cell.style));
+                    if (cell.numFmt) newCell.numFmt = cell.numFmt;
+                });
+                newRow.commit();
+            } else if (rowNum === cDetailStartRow) {
+                for (let i = 0; i < rowCount; i++) {
+                    const targetRowNum = rowNum + i;
+                    const newRow = newSheet.getRow(targetRowNum);
+                    newRow.height = row.height;
+                    row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+                        const newCell = newRow.getCell(colNum);
+                        newCell.style = JSON.parse(JSON.stringify(cell.style));
+                        if (cell.numFmt) newCell.numFmt = cell.numFmt;
+                        if (cell.type === ExcelJS.ValueType.Formula || (cell.value && cell.value.formula)) {
+                            let oldF = cell.formula || cell.value.formula;
+                            newCell.value = { formula: shiftFormula(oldF, i, cDetailStartRow) };
+                        } else {
+                            newCell.value = cell.value; 
+                        }
+                    });
+                    newRow.commit();
+                }
+            } else if (rowNum > cDetailStartRow) {
+                const targetRowNum = rowNum + offset;
+                const newRow = newSheet.getRow(targetRowNum);
+                newRow.height = row.height; newRow.hidden = row.hidden;
+                row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+                    const newCell = newRow.getCell(colNum);
+                    newCell.style = JSON.parse(JSON.stringify(cell.style));
+                    if (cell.numFmt) newCell.numFmt = cell.numFmt;
+                    if (cell.type === ExcelJS.ValueType.Formula || (cell.value && cell.value.formula)) {
+                        let oldF = cell.formula || cell.value.formula;
+                        newCell.value = { formula: adjustBottomFormula(oldF, cDetailStartRow, offset) };
+                    } else {
+                        newCell.value = cell.value;
+                    }
+                });
+                newRow.commit();
+            }
+        });
+
+        if (templateSheet.hasMerges) {
+            const merges = templateSheet.model.merges;
+            merges.forEach(mergeRange => {
+                const [startRef, endRef] = mergeRange.split(':');
+                if (!endRef) { newSheet.mergeCells(mergeRange); return; }
+                const startDec = decodeCell(startRef), endDec = decodeCell(endRef);
+                let sRow = startDec.row, eRow = endDec.row;
+                if (eRow < cDetailStartRow) {
+                    newSheet.mergeCells(mergeRange);
+                } else if (sRow === cDetailStartRow && eRow === cDetailStartRow) {
+                    for (let i = 0; i < rowCount; i++) {
+                        newSheet.mergeCells(`${startDec.colStr}${sRow + i}:${endDec.colStr}${eRow + i}`);
+                    }
+                } else if (sRow > cDetailStartRow) {
+                    newSheet.mergeCells(`${startDec.colStr}${sRow + offset}:${endDec.colStr}${eRow + offset}`);
+                } else {
+                    newSheet.mergeCells(`${startDec.colStr}${sRow}:${endDec.colStr}${eRow + offset}`);
+                }
+            });
+        }
+
+        const baseRowForFormat = templateSheet.getRow(cDetailStartRow);
+        
+        // 替换合同号码 和 替换买方名称 (直接根据带有买方: 的单元格整体赋纯文本，原样式会自动保留)
+        newSheet.eachRow((r) => {
+            r.eachCell((cell, colNum) => {
+                let cleanVal = cleanStr(getCellValue(cell));
+                // 替换合同号
+                if (cleanVal.includes("合同号码")) {
+                    for(let k = colNum + 1; k <= colNum + 3; k++) { 
+                        let target = newSheet.getCell(r.number, k);
+                        target.value = targetContractNo; break; 
+                    }
+                }
+                // 替换买方 (支持识别中文或英文冒号)
+                if (cleanVal.startsWith("买方:") || cleanVal.startsWith("买方：")) {
+                    cell.value = "买方：" + (consumerUnit || "");
+                }
+            });
+        });
+
+        // 写入明细行数据
+        for (let i = 0; i < rowCount; i++) {
+            let currentRowNum = cDetailStartRow + i;
+            let sourceDataObj = aDataArray[i]; 
+            let rowTarget = newSheet.getRow(currentRowNum);
+            for (let cColIdx in cHeaderMap) {
+                let colIdxNum = Number(cColIdx);
+                let cColName = cHeaderMap[cColIdx];
+                let refBaseCell = baseRowForFormat.getCell(colIdxNum);
+                if (refBaseCell.type === ExcelJS.ValueType.Formula || (refBaseCell.value && refBaseCell.value.formula)) continue; 
+                if (cColName.includes("序号") || cColName.includes("项号")) {
+                    rowTarget.getCell(colIdxNum).value = i + 1; continue;
+                }
+                if (colIdxNum < safeAreaStartCol) continue; 
+                let bestMatchKey = null;
+                for (let aColName in sourceDataObj) {
+                    if (aColName.includes(cColName) || cColName.includes(aColName)) { bestMatchKey = aColName; break; }
+                }
+                if (bestMatchKey) rowTarget.getCell(colIdxNum).value = sourceDataObj[bestMatchKey];
+            }
+            rowTarget.commit();
+        }
+    }
+
+    let finalBuffer = null;
+    async function startProcess() {
+        const fileAInput = document.getElementById('fileA'), fileBInput = document.getElementById('fileB'), fileCInput = document.getElementById('fileC');
+        // 模板来源：优先手动上传，其次自动载入的默认模板
+        const templateFile = (fileCInput.files && fileCInput.files.length) ? fileCInput.files[0] : defaultTemplateFile;
+        if (!fileAInput.files.length || !fileBInput.files.length) { alert("请上传 STEP 01 的 A 表 与 STEP 02 的 B 表。"); return; }
+        if (!templateFile) { alert("合同模板未就绪：默认模板加载失败，请在 STEP 03 手动上传模板。"); return; }
+        if (document.getElementById('prankToggle').checked) showPrankLoading();
+        toggleLoading(true); logBox.innerHTML = '';
+        const tAll = performance.now();
+        logSection('合同生成流程启动');
+        log(`输入文件 → A表 ${fileAInput.files.length} 个 / B表 ${fileBInput.files.length} 个 / C表(模板) ${templateFile.name}`, 'info');
+        log("▶ 系统启动，分析公式保护区域...", "info");
+        try {
+            const sourceDataMap = await parseAFiles(fileAInput.files);
+
+            logSection('解析 C 表合同模板');
+            const tC = performance.now();
+            log(`正在加载模板: ${templateFile.name}（${fmtBytes(templateFile.size)}）`, 'info');
+            const wbFinal = new ExcelJS.Workbook(); await wbFinal.xlsx.load(await readFileAsBuffer(templateFile));
+            const templateSheet = wbFinal.worksheets[0]; const templateSheetId = templateSheet.id;
+            log(`模板工作表「${templateSheet.name}」共 ${templateSheet.rowCount} 行 × ${templateSheet.columnCount} 列`, 'normal');
+            let cHeaderMap = {}, cDetailStartRow = -1, safeAreaStartCol = 999;
+            templateSheet.eachRow((row, rowNum) => {
+                let rowFullText = row.values.map(v => cleanStr(getCellValue({value: v}))).join("");
+                if (Object.keys(cHeaderMap).length === 0 && isHeaderRow(rowFullText)) {
+                    row.eachCell((cell, colNum) => {
+                        let hName = cleanStr(getCellValue(cell));
+                        if(hName) {
+                            cHeaderMap[colNum] = hName;
+                            if (hName.includes("报关品名")) safeAreaStartCol = Math.min(safeAreaStartCol, colNum);
+                        }
+                    });
+                    cDetailStartRow = rowNum + 1;
+                }
+                if (cDetailStartRow !== -1 && String(getCellValue(row.getCell(1))) === "1") {
+                    cDetailStartRow = rowNum;
+                }
+            });
+            log(`模板分析: 表头列 ${Object.keys(cHeaderMap).length} 个，明细起始行 第 ${cDetailStartRow} 行，公式保护起始列 第 ${safeAreaStartCol === 999 ? '未定位' : safeAreaStartCol} 列`, 'success');
+            log(`模板字段: ${Object.values(cHeaderMap).join(' | ')}`, 'normal');
+            log(`C 表解析耗时 ${fmtMs(performance.now() - tC)}`, 'normal');
+
+            logSection('按 B 表任务清单逐单装配');
+            const tB = performance.now();
+            log(`正在加载任务清单: ${fileBInput.files[0].name}（${fmtBytes(fileBInput.files[0].size)}）`, 'info');
+            const wbB = new ExcelJS.Workbook(); await wbB.xlsx.load(await readFileAsBuffer(fileBInput.files[0]));
+            const wsB = wbB.worksheets[0];
+            log(`B 表共 ${wsB.rowCount} 行（含表头），开始逐行匹配...`, 'normal');
+            let successCount = 0, skipNoData = 0, skipBadFormat = 0, skipEmpty = 0;
+            let totalMergedRows = 0;
+            wsB.eachRow((row, rowNum) => {
+                if (rowNum === 1) return;
+                let targetContractNo = String(getCellValue(row.getCell(1))).trim();
+                let targetCustOrderNo = String(getCellValue(row.getCell(3))).trim();
+                if (!targetContractNo || !targetCustOrderNo) { skipEmpty++; return; }
+                let match = targetContractNo.match(/-(\d+)$/);
+                if (!match) { skipBadFormat++; log(`第 ${rowNum} 行 [${targetContractNo}] 编号尾号格式不符（缺 -数字），跳过`, 'warning'); return; }
+                let targetSheetName = `采购合同 (${match[1]})`;
+
+                // 获取匹配的数据源以及提取出的消费使用单位
+                let aDataObj = sourceDataMap[targetCustOrderNo];
+                if (!aDataObj) { skipNoData++; log(`第 ${rowNum} 行 合同[${targetContractNo}] 客户单号[${targetCustOrderNo}] 在 A 表中无匹配数据源，跳过`, 'warning'); return; }
+                let aDataArray = aDataObj.details;
+                let aConsumerUnit = aDataObj.consumerUnit;
+
+                log(`>>> 第 ${rowNum} 行 构建 [${targetSheetName}] ← 单号[${targetCustOrderNo}] 买方[${aConsumerUnit || '空'}]，合并装载 ${aDataArray.length} 行明细`, "success");
+                successCount++;
+                totalMergedRows += aDataArray.length;
+                if (wbFinal.getWorksheet(targetSheetName)) { log(`    检测到同名工作表，覆盖重建 [${targetSheetName}]`, 'normal'); wbFinal.removeWorksheet(targetSheetName); }
+                buildContractSheet(wbFinal, templateSheet, targetSheetName, aDataArray, targetContractNo, cHeaderMap, cDetailStartRow, safeAreaStartCol, aConsumerUnit);
+            });
+            wbFinal.removeWorksheet(templateSheetId);
+            log(`B 表匹配汇总：成功 ${successCount} 单 / 空行 ${skipEmpty} / 格式不符 ${skipBadFormat} / 无数据源 ${skipNoData}，合并明细共 ${totalMergedRows} 行，耗时 ${fmtMs(performance.now() - tB)}`, 'info');
+            if (successCount === 0) throw new Error("没有任何一单匹配成功。");
+
+            logSection('写出最终合同汇总文件');
+            const tW = performance.now();
+            finalBuffer = await wbFinal.xlsx.writeBuffer();
+            log(`序列化完成：${successCount} 个工作表，文件大小 ${fmtBytes(finalBuffer.byteLength)}，耗时 ${fmtMs(performance.now() - tW)}`, 'success');
+            log(`🎉 生成大功告成！合计公式已精准拉长，数字完全对应！全流程总耗时 ${fmtMs(performance.now() - tAll)}`, "success");
+            document.getElementById('btnDownload').style.display = 'inline-flex';
+        } catch (error) {
+            log(`❌ 生成中止: ${error.message}`, "error");
+        } finally {
+            toggleLoading(false);
+        }
+    }
+
+    function downloadExcel() {
+        if (!finalBuffer) return;
+        saveAs(new Blob([finalBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `自动化合同汇总_${new Date().getTime()}.xlsx`);
+    }
+
+    // 解析所有 A 表，建立 委托单号(客户单号) -> 文件 的映射（归档与 PDF 合并共用，保证逻辑一致）
+    async function mapAFilesByCustNo(files) {
+        const fileMap = {};
+        for (let file of files) {
+            let wb = new ExcelJS.Workbook();
+            await wb.xlsx.load(await readFileAsBuffer(file));
+            let ws = wb.worksheets[0];
+            let custNo = null;
+            ws.eachRow((row) => {
+                if (!custNo) {
+                    row.eachCell((c, n) => {
+                        if (cleanStr(getCellValue(c)).includes("委托单号")) {
+                            custNo = String(getCellValue(ws.getRow(row.number).getCell(n + 1))).trim();
+                        }
+                    });
+                }
+            });
+            if (custNo) fileMap[custNo] = file;
+        }
+        return fileMap;
+    }
+
+    // ==========================================
+    // 【打包导出归档文件夹 ZIP】
+    // ==========================================
+    async function exportFoldersZip() {
+        const fileAInput = document.getElementById('fileA');
+        const fileBInput = document.getElementById('fileB');
+        
+        if (!fileAInput.files.length || !fileBInput.files.length) {
+            alert("导出归档文件夹需要 A表(数据源) 和 B表(任务清单)！\n不用传 C 表。");
+            return;
+        }
+
+        const btnExp = document.getElementById('btnExportFolders');
+        const btnGen = document.getElementById('btnGenerate');
+        const spinnerExp = document.getElementById('loadingSpinnerExp');
+        const btnTextExp = document.getElementById('btnTextExp');
+
+        btnExp.disabled = true; btnGen.disabled = true;
+        spinnerExp.style.display = 'block';
+        btnTextExp.innerText = '打包压缩中...';
+        logBox.innerHTML = '';
+        const tAll = performance.now();
+        logSection('归档文件夹打包流程启动');
+        log(`输入文件 → A表 ${fileAInput.files.length} 个 / B表 ${fileBInput.files.length} 个`, 'info');
+        log("▶ 启动归档引擎，正在分析文件映射...", "info");
+
+        try {
+            // 1. 映射所有上传的 A 文件（与 PDF 合并共用同一逻辑）
+            const tMap = performance.now();
+            let fileMap = await mapAFilesByCustNo(fileAInput.files);
+            log(`A 表映射完成：${Object.keys(fileMap).length}/${fileAInput.files.length} 个文件提取到委托单号，耗时 ${fmtMs(performance.now() - tMap)}`, 'success');
+            if (Object.keys(fileMap).length) log(`已索引单号: ${Object.keys(fileMap).join('、')}`, 'normal');
+
+            // 2. 解析 B 表
+            log(`正在加载任务清单: ${fileBInput.files[0].name}（${fmtBytes(fileBInput.files[0].size)}）`, 'info');
+            let wbB = new ExcelJS.Workbook();
+            await wbB.xlsx.load(await readFileAsBuffer(fileBInput.files[0]));
+            const wsB = wbB.worksheets[0];
+
+            // 提前计算有效行数 (即需要生成的文件夹数量)，用于命名根文件夹
+            let validCount = 0;
+            for(let i = 2; i <= wsB.rowCount; i++) {
+                let row = wsB.getRow(i);
+                let col1 = String(getCellValue(row.getCell(1))).trim();
+                let col2 = String(getCellValue(row.getCell(2))).trim();
+                let col3 = String(getCellValue(row.getCell(3))).trim();
+                if (!col1 && !col2 && !col3) continue;
+                validCount++;
+            }
+            log(`B 表共 ${wsB.rowCount} 行，识别出 ${validCount} 个有效任务（即待建文件夹数）`, 'normal');
+
+            // 3. 准备 ZIP 环境
+            const zip = new JSZip();
+            const today = new Date();
+            const yy = String(today.getFullYear()).slice(-2);
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            const dateStr = `${yy}${mm}${dd}`;
+
+            // 使用有效任务清单数量命名根目录
+            const rootFolderName = `${dateStr} XD ${validCount}单`;
+            const rootFolder = zip.folder(rootFolderName);
+            log(`根目录命名为「${rootFolderName}」，开始逐单装箱...`, 'info');
+            let successCount = 0, emptyDirCount = 0;
+
+            // 4. 按 B 表行列出子文件夹并存入文件
+            for(let i = 2; i <= wsB.rowCount; i++) {
+                let row = wsB.getRow(i);
+                let col1 = String(getCellValue(row.getCell(1))).trim();
+                let col2 = String(getCellValue(row.getCell(2))).trim();
+                let col3 = String(getCellValue(row.getCell(3))).trim(); // 客户单号
+
+                if (!col1 && !col2 && !col3) continue;
+
+                let folderName = `${dateStr} ${col1} ${col2} ${col3}`;
+                let targetFolder = rootFolder.folder(folderName);
+
+                let matchedFile = fileMap[col3];
+                if (matchedFile) {
+                    targetFolder.file(matchedFile.name, matchedFile);
+                    log(`打包装箱: [${folderName}] -> 放入原文件 [${matchedFile.name}]（${fmtBytes(matchedFile.size)}）`, 'success');
+                    successCount++;
+                } else {
+                    log(`仅创建空目录: [${folderName}] (单号[${col3 || '空'}]在A表中无匹配)`, 'warning');
+                    emptyDirCount++;
+                }
+            }
+
+            if (successCount === 0) log("警告: 未找到匹配的 A 表放入任何目录中！", "warning");
+
+            log(`装箱汇总：${successCount} 个目录放入文件 / ${emptyDirCount} 个空目录`, 'info');
+            log("正在压缩生成 ZIP，请稍候...", "info");
+
+            // 5. 生成压缩包下载
+            const tZip = performance.now();
+            const blob = await zip.generateAsync({ type: "blob" });
+            saveAs(blob, `${rootFolderName}.zip`);
+            log(`压缩完成：ZIP 大小 ${fmtBytes(blob.size)}，压缩耗时 ${fmtMs(performance.now() - tZip)}`, 'success');
+            log(`🎉 文件夹打包导出成功！全流程总耗时 ${fmtMs(performance.now() - tAll)}`, "success");
+
+        } catch (error) {
+            log(`❌ 导出失败: ${error.message}`, "error");
+        } finally {
+            btnExp.disabled = false; btnGen.disabled = false;
+            spinnerExp.style.display = 'none';
+            btnTextExp.innerText = '📦 导出归档文件夹';
+        }
+    }
+
+    // ==========================================
+    // 【独立模块：PDF 扫描件 OCR 识别 + 按合同编号拆分归档】
+    //   pdf.js 渲染每页 → tesseract.js OCR 读编号 → pdf-lib 拆成单页 PDF → JSZip 打包
+    // ==========================================
+
+    // 配置 pdf.js worker（CDN 同版本）
+    if (window['pdfjsLib']) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    function updatePdfName() {
+        updateFileName('filePdf', 'namePdf', 'boxPdf');
+    }
+
+    // 从一段文本里抽取「合同编号 / 合同号码」后面的值
+    // 返回 { no, method, tries }：no=命中的编号(或null)，method=命中方式，tries=每一步尝试详情(用于调试)
+    function extractContractNo(rawText) {
+        const tries = [];
+        if (!rawText) return { no: null, method: null, tries };
+
+        // 归一：全角冒号→半角、全角空格→半角，统一便于匹配
+        const text = String(rawText).replace(/：/g, ':').replace(/　/g, ' ');
+        const lines = text.split(/\r?\n/);
+
+        // 可能的标签写法（OCR 常把“合同编号”读断或读错，故多列几种）
+        const LABELS = ['合同编号', '合同号码', '合同编号', '合同编', '合同号', '编号', 'contractno', 'contractnumber', 'no'];
+        // 编号取值字符集：字母/数字 开头，后接 字母数字 - / _ . 至少再 2 位
+        const VAL = '[A-Za-z0-9][A-Za-z0-9\\-\\/_.．]{2,}';
+        const clean = v => v.replace(/[．.]/g, '.').replace(/[，。、；,.]+$/, '');
+
+        // 策略1：逐行匹配（标签与值在同一行，去掉行内空格后匹配）
+        for (const line of lines) {
+            const compact = line.replace(/\s+/g, '');
+            for (const lab of LABELS) {
+                const re = new RegExp(lab + '[:#]*(' + VAL + ')', 'i');
+                const m = compact.match(re);
+                if (m && m[1]) {
+                    tries.push({ strategy: 'line', label: lab, line: compact, hit: m[1] });
+                    return { no: clean(m[1]), method: 'line:' + lab, tries };
+                }
+            }
+        }
+        // 策略2：全文压缩匹配（标签与值可能被 OCR 拆到不同行/隔开）
+        const allCompact = text.replace(/\s+/g, '');
+        for (const lab of LABELS) {
+            const re = new RegExp(lab + '[:#]*(' + VAL + ')', 'i');
+            const m = allCompact.match(re);
+            if (m && m[1]) {
+                tries.push({ strategy: 'compact', label: lab, hit: m[1] });
+                return { no: clean(m[1]), method: 'compact:' + lab, tries };
+            }
+        }
+        // 策略3：模糊匹配——OCR 可能把“编号/号码”认错，只要出现“合同”后面隔几个字内跟着冒号+值即可
+        for (const line of lines) {
+            const compact = line.replace(/\s+/g, '');
+            // 合同 + 最多4个任意字 + 可选冒号/井号 + 取值
+            const m = compact.match(new RegExp('合[同问回]?.{0,4}[:#]\\s*(' + VAL + ')'));
+            if (m && m[1]) {
+                tries.push({ strategy: 'fuzzy-合同', line: compact, hit: m[1] });
+                return { no: clean(m[1]), method: 'fuzzy:合同', tries };
+            }
+        }
+        // 策略4：编号常见格式兜底（形如 GYCG-HF26010-07 / XD-2024-001 / HT2024001：
+        // 由「字母数字段」用 - 或 / 连接，可能多段，需整体抓取）
+        // 注意：在「保留空白的原文」上匹配——空白天然作为分词边界（正则字符类不含空白，
+        // 遇空白即断开），避免把相邻噪声词（如 OCR 误读出的 ARSH）粘到真实编号前面。
+        let cands = (text.match(/[A-Za-z0-9]+(?:[-\/][A-Za-z0-9]+)*/g) || []);
+        // 过滤：必须同时含字母与至少4位连续数字（排除纯数字电话/日期、纯字母词如 ARSH）
+        cands = cands.filter(s => /[A-Za-z]/.test(s) && /\d{4,}/.test(s));
+        if (cands.length) {
+            // 合同编号通常是页面上最长的字母数字编码，取最长者
+            cands.sort((a, b) => b.length - a.length);
+            tries.push({ strategy: 'pattern', hit: cands[0], all: cands });
+            return { no: clean(cands[0]), method: 'pattern', tries };
+        }
+        // 都没命中：记录尝试过的标签，便于调试
+        tries.push({ strategy: 'none', testedLabels: LABELS, textLen: text.length });
+        return { no: null, method: null, tries };
+    }
+
+    // 文件名安全化（去掉非法字符，避免 ZIP 内路径出错）
+    function sanitizeName(name) {
+        return String(name).replace(/[\\\/:*?"<>|\r\n]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80) || '未识别';
+    }
+
+    // ====== B 表权威校正 + 归档目录映射 ======
+    // 读取 B 表：第1列=合同编号(归档分类键)，第2/3列与「导出归档文件夹」一致用于拼目录名
+    // 返回 { noList(校正用), folderByNo(编号→归档目录名), validCount, rootName }
+    // 归档目录命名与 exportFoldersZip 保持完全一致：根=`${dateStr} XD ${validCount}单`，子=`${dateStr} ${col1} ${col2} ${col3}`
+    async function loadBTableForPdf(dateStr) {
+        const fileBInput = document.getElementById('fileB');
+        const empty = { noList: [], folderByNo: {}, rows: [], validCount: 0, rootName: `${dateStr} PDF拆分` };
+        if (!fileBInput || !fileBInput.files.length) return empty;
+        const noList = [], folderByNo = {}, rows = [];
+        let validCount = 0;
+        try {
+            const wbB = new ExcelJS.Workbook();
+            await wbB.xlsx.load(await readFileAsBuffer(fileBInput.files[0]));
+            const wsB = wbB.worksheets[0];
+            wsB.eachRow((row, rowNum) => {
+                if (rowNum === 1) return; // 跳过表头
+                const col1 = String(getCellValue(row.getCell(1))).trim(); // 合同编号
+                const col2 = String(getCellValue(row.getCell(2))).trim();
+                const col3 = String(getCellValue(row.getCell(3))).trim(); // 客户单号
+                if (!col1 && !col2 && !col3) return;
+                validCount++;
+                // 与归档功能完全相同的子目录命名
+                const folderName = `${dateStr} ${col1} ${col2} ${col3}`;
+                rows.push({ col1, col2, col3, folderName });
+                if (col1) {
+                    noList.push(col1);
+                    folderByNo[normNo(col1)] = folderName;
+                }
+            });
+        } catch (e) { console.warn('读取 B 表失败:', e.message); }
+        return { noList, folderByNo, rows, validCount, rootName: `${dateStr} XD ${validCount}单` };
+    }
+
+    // 归一化：转大写、去掉非字母数字（便于跨 OCR 噪声比较）
+    function normNo(s) { return String(s).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+
+    // 编辑距离（Levenshtein），用于衡量 OCR 串与标准编号的相似度
+    function editDistance(a, b) {
+        const m = a.length, n = b.length;
+        if (!m) return n; if (!n) return m;
+        let prev = Array.from({ length: n + 1 }, (_, i) => i);
+        for (let i = 1; i <= m; i++) {
+            let cur = [i];
+            for (let j = 1; j <= n; j++) {
+                const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+            }
+            prev = cur;
+        }
+        return prev[n];
+    }
+
+    // 把 OCR 串校正到 B 表里最接近的标准编号。
+    // 优先级：完全相同 → 尾号(末尾数字段)唯一匹配 → 编辑距离最小且足够接近
+    // 返回 { no, method } 或 null
+    function correctByList(ocrNo, list) {
+        if (!ocrNo || !list || !list.length) return null;
+        const target = normNo(ocrNo);
+        if (!target) return null;
+
+        // 1) 归一化后完全一致
+        for (const std of list) if (normNo(std) === target) return { no: std, method: 'B表精确' };
+
+        // 2) 用 OCR 读对率最高的“尾号段”匹配（如 -05/-06）。取 OCR 串末尾的数字段
+        const tailM = String(ocrNo).match(/(\d{1,4})\s*$/);
+        if (tailM) {
+            const tail = tailM[1].replace(/^0+(?=\d)/, ''); // 去前导0再比，兼容 05 vs 5
+            const tailHits = list.filter(std => {
+                const stdTail = (String(std).match(/(\d{1,4})\s*$/) || [])[1];
+                return stdTail && stdTail.replace(/^0+(?=\d)/, '') === tail;
+            });
+            if (tailHits.length === 1) return { no: tailHits[0], method: 'B表尾号' };
+            // 尾号有多个候选时，再用编辑距离在候选里挑最接近的
+            if (tailHits.length > 1) {
+                let best = null, bestD = Infinity;
+                for (const std of tailHits) {
+                    const d = editDistance(target, normNo(std));
+                    if (d < bestD) { bestD = d; best = std; }
+                }
+                if (best) return { no: best, method: 'B表尾号+距离' };
+            }
+        }
+
+        // 3) 全表编辑距离最小，且相似度足够高（差异不超过长度的 35%）才采信
+        let best = null, bestD = Infinity;
+        for (const std of list) {
+            const d = editDistance(target, normNo(std));
+            if (d < bestD) { bestD = d; best = std; }
+        }
+        if (best) {
+            const maxLen = Math.max(target.length, normNo(best).length);
+            if (bestD <= Math.ceil(maxLen * 0.35)) return { no: best, method: `B表距离(${bestD})` };
+        }
+        return null;
+    }
+
+    // ====== B 表锚定定位（应对扫描件 OCR 把编号打碎/误读/页面有大量产品型号干扰）======
+    // 直接拿 B 表已知编号当锚，在 OCR 全文里找“最像某个 B 表编号”的位置，
+    // 比“在噪声文本里正则抠编号”稳得多。实测对打碎的 GYCG-HF26010-0X 由 0/4 提升到 4/4。
+    function locateByBTable(ocrText, bList) {
+        if (!ocrText || !bList || !bList.length) return null;
+        const text = String(ocrText).replace(/：/g, ':').replace(/　/g, ' ').replace(/[－—–‐―一]/g, '-');
+
+        // 策略 A：滑动窗口模糊匹配 —— 抽全文字母数字片段，拼相邻 1~6 段与每个 B 表编号比编辑距离
+        const normToks = (text.match(/[A-Za-z0-9]+/g) || []).map(normNo).filter(Boolean);
+        let best = null, bestScore = Infinity, bestWin = '';
+        for (let i = 0; i < normToks.length; i++) {
+            let win = '';
+            for (let span = 0; span < 6 && i + span < normToks.length; span++) {
+                win += normToks[i + span];
+                if (win.length < 4 || win.length > 24) continue;
+                for (const std of bList) {
+                    const ns = normNo(std);
+                    const d = editDistance(win, ns);
+                    const score = d + Math.abs(win.length - ns.length) * 0.5;
+                    if (score < bestScore) { bestScore = score; best = std; bestWin = win; }
+                }
+            }
+        }
+        if (best && bestScore <= normNo(best).length * 0.45) {
+            return { no: best, method: `B表锚定(score=${bestScore.toFixed(1)},win=${bestWin})` };
+        }
+
+        // 策略 B：尾号锁定 —— B 表共享前缀、仅尾号不同时，只要尾号唯一且能在锚点附近读到即可锁定
+        const tails = bList.map(s => ({ s, tail: (String(s).match(/(\d{1,4})\s*$/) || [])[1] })).filter(x => x.tail);
+        const uniq = new Set(tails.map(t => t.tail.replace(/^0+(?=\d)/, '')));
+        if (uniq.size === tails.length && tails.length) {
+            const norms = bList.map(normNo);
+            let pre = norms[0];
+            for (const n of norms.slice(1)) { let k = 0; while (k < pre.length && k < n.length && pre[k] === n[k]) k++; pre = pre.slice(0, k); }
+            const anchor = (pre.match(/^[A-Z]+/) || [])[0] || pre.slice(0, 4);
+            const toks = text.match(/[A-Za-z0-9]+/g) || [];
+            const gi = anchor ? toks.findIndex(t => normNo(t).includes(anchor) || (anchor.includes(normNo(t)) && normNo(t).length >= 3)) : -1;
+            if (gi >= 0) {
+                const win = toks.slice(gi, gi + 6);
+                for (let k = 1; k < win.length; k++) {
+                    const tk = win[k];
+                    if (/^2[0CcOo]\d{2}$/.test(tk)) break;          // 碰到年份就停，尾号在年份前
+                    const dm = tk.match(/^0?(\d{1,2})$/);
+                    if (dm) {
+                        const t = dm[1].replace(/^0+(?=\d)/, '');
+                        const hit = tails.find(x => x.tail.replace(/^0+(?=\d)/, '') === t);
+                        if (hit) return { no: hit.s, method: `B表尾号(${tk})` };
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    // 图像预处理：灰度 + Otsu 自适应阈值二值化，显著提升扫描件中文 OCR 准确率
+    function preprocessCanvas(canvas) {
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = img.data;
+        const hist = new Array(256).fill(0);
+        // 1) 转灰度并统计直方图
+        for (let i = 0; i < d.length; i += 4) {
+            const g = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
+            d[i] = d[i + 1] = d[i + 2] = g;
+            hist[g]++;
+        }
+        // 2) Otsu 求最优阈值（最大化类间方差）
+        const total = canvas.width * canvas.height;
+        let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
+        let sumB = 0, wB = 0, maxVar = -1, threshold = 127;
+        for (let t = 0; t < 256; t++) {
+            wB += hist[t]; if (wB === 0) continue;
+            const wF = total - wB; if (wF === 0) break;
+            sumB += t * hist[t];
+            const mB = sumB / wB, mF = (sum - sumB) / wF;
+            const between = wB * wF * (mB - mF) * (mB - mF);
+            if (between > maxVar) { maxVar = between; threshold = t; }
+        }
+        // 3) 二值化（略微下调阈值，保留更多笔画细节）
+        const th = threshold * 0.92;
+        for (let i = 0; i < d.length; i += 4) {
+            const v = d[i] > th ? 255 : 0;
+            d[i] = d[i + 1] = d[i + 2] = v;
+        }
+        ctx.putImageData(img, 0, 0);
+        return threshold;
+    }
+
+    function setPdfProgress(pct, indeterminate) {
+        const wrap = document.getElementById('pdfProgressWrap');
+        const bar = document.getElementById('pdfProgressBar');
+        wrap.classList.add('visible');
+        if (indeterminate) { bar.classList.add('indeterminate'); }
+        else { bar.classList.remove('indeterminate'); bar.style.width = pct + '%'; }
+    }
+    function resetPdfProgress() {
+        const wrap = document.getElementById('pdfProgressWrap');
+        const bar = document.getElementById('pdfProgressBar');
+        bar.classList.remove('indeterminate'); bar.style.width = '100%';
+        setTimeout(() => { wrap.classList.remove('visible'); bar.style.width = '0%'; }, 800);
+    }
+
+    async function startPdfSplit() {
+        const filePdfInput = document.getElementById('filePdf');
+        if (!filePdfInput.files.length) { alert('请先选择需要识别拆分的 PDF 文件！'); return; }
+        if (!window['pdfjsLib'] || !window['PDFLib'] || !window['Tesseract']) {
+            alert('PDF 处理库未加载完成，请检查网络后刷新页面重试。'); return;
+        }
+
+        const btnPdf = document.getElementById('btnPdfSplit');
+        const btnGen = document.getElementById('btnGenerate');
+        const btnExp = document.getElementById('btnExportFolders');
+        const spinnerPdf = document.getElementById('loadingSpinnerPdf');
+        const btnTextPdf = document.getElementById('btnTextPdf');
+
+        btnPdf.disabled = true; btnGen.disabled = true; btnExp.disabled = true;
+        spinnerPdf.style.display = 'block'; btnTextPdf.innerText = '识别中...';
+        if (document.getElementById('prankToggle').checked) showPrankLoading();
+        logBox.innerHTML = '';
+        setPdfProgress(0, true);
+        const tAll = performance.now();
+        logSection('PDF 识别拆分流程启动');
+        log(`待处理 PDF ${filePdfInput.files.length} 个：${Array.from(filePdfInput.files).map(f => `${f.name}(${fmtBytes(f.size)})`).join('、')}`, 'info');
+        log('▶ PDF 模块启动，初始化 OCR 引擎（中文+英文）...', 'info');
+
+        let workers = [];
+        const btnTextPdfEl = document.getElementById('btnTextPdf');
+        try {
+            // —— OCR 线程池：开多个 Tesseract worker（各自跑在独立 Web Worker 线程），多页并行识别 ——
+            const tPool = performance.now();
+            const cores = navigator.hardwareConcurrency || 4;
+            const POOL_SIZE = Math.min(4, Math.max(2, Math.floor(cores / 2)));
+            log(`▶ 准备 ${POOL_SIZE} 个 OCR 线程（检测到 ${cores} 核 CPU）...`, 'info');
+
+            const createOneWorker = (showLoad) => Tesseract.createWorker(['chi_sim', 'eng'], 1, {
+                logger: showLoad ? (m => {
+                    if (m.status !== 'recognizing text' && typeof m.progress === 'number' && m.progress < 1) {
+                        btnTextPdfEl.innerText = `加载模型 ${Math.round(m.progress * 100)}%`;
+                    }
+                }) : undefined
+            });
+
+            // 先建第 1 个 worker：触发中文模型下载并写入浏览器缓存
+            workers.push(await createOneWorker(true));
+            // 其余 worker 并行创建：直接命中缓存，几乎瞬时
+            if (POOL_SIZE > 1) {
+                const rest = await Promise.all(Array.from({ length: POOL_SIZE - 1 }, () => createOneWorker(false)));
+                workers.push(...rest);
+            }
+            log(`✓ ${workers.length} 个 OCR 线程就绪（初始化耗时 ${fmtMs(performance.now() - tPool)}），开始并行解析...`, 'success');
+
+            const zip = new JSZip();
+            const today = new Date();
+            const dateStr = `${String(today.getFullYear()).slice(-2)}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+
+            // 读取 B 表：得到校正用编号库 + 编号→归档目录名映射（与「导出归档文件夹」目录结构一致）
+            logSection('载入 B 表校正库与归档结构');
+            const bInfo = await loadBTableForPdf(dateStr);
+            const bNoList = bInfo.noList;             // 校正用
+            const folderByNo = bInfo.folderByNo;      // 编号(归一化) → 归档子目录名
+            // 根目录：有 B 表则与归档功能同名，便于两个 ZIP 合并；否则用独立名
+            const rootFolder = zip.folder(bNoList.length ? bInfo.rootName : `${dateStr} PDF拆分`);
+            if (bNoList.length) {
+                log(`✓ 已载入 B 表 ${bNoList.length} 条编号，将校正 OCR 并放入归档目录「${bInfo.rootName}」`, 'success');
+                log(`B 表编号库: ${bNoList.join('、')}`, 'normal');
+            }
+            else log('未检测到 B 表（STEP 02），将仅用 OCR+正则识别并按编号建目录（建议上传 B 表以对齐归档结构）', 'warning');
+
+            // —— 合并归档：若同时上传了 A 表，则把归档文件夹结构 + A 原文件一并并入本 ZIP ——
+            // 这样最终导出的单个 ZIP 同时含有「导出归档文件夹」的结果和拆分后的 PDF 页
+            let mergedArchive = false, archivedFileCount = 0;
+            const fileAInput = document.getElementById('fileA');
+            if (bInfo.rows.length && fileAInput && fileAInput.files.length) {
+                log('▶ 检测到 A 表，正在并入归档文件夹结构（与「导出归档文件夹」结果合并）...', 'info');
+                const fileMap = await mapAFilesByCustNo(fileAInput.files);
+                for (const r of bInfo.rows) {
+                    const targetFolder = rootFolder.folder(r.folderName); // 预建子目录，确保空目录也存在
+                    const matchedFile = fileMap[r.col3];
+                    if (matchedFile) {
+                        targetFolder.file(matchedFile.name, matchedFile);
+                        archivedFileCount++;
+                        log(`归档装箱: [${r.folderName}] ← A表原文件 [${matchedFile.name}]`, 'success');
+                    }
+                }
+                mergedArchive = true;
+                log(`✓ 已并入归档：${archivedFileCount}/${bInfo.rows.length} 个文件夹放入 A 表原文件，拆分 PDF 将合并到同一 ZIP`, 'success');
+            }
+
+            // 先统计总页数用于进度
+            logSection('载入 PDF 并统计页数');
+            const tLoad = performance.now();
+            let totalPages = 0;
+            const pdfDocs = [];
+            for (const file of filePdfInput.files) {
+                const buf = await readFileAsBuffer(file);
+                // pdf.js（worker 模式）会转移并 detach 传入的 buffer，
+                // 因此给 pdf.js 和 pdf-lib 各发一份独立拷贝，避免 "detached ArrayBuffer"
+                const bufForPdfjs = buf.slice(0);
+                const bufForLib = buf.slice(0);
+                const pdfjsDoc = await pdfjsLib.getDocument({ data: new Uint8Array(bufForPdfjs) }).promise;
+                const libDoc = await PDFLib.PDFDocument.load(bufForLib, { ignoreEncryption: true });
+                pdfDocs.push({ file, pdfjsDoc, libDoc });
+                totalPages += pdfjsDoc.numPages;
+                log(`    载入 [${file.name}]：${pdfjsDoc.numPages} 页`, 'normal');
+            }
+            log(`共 ${filePdfInput.files.length} 个 PDF，合计 ${totalPages} 页待识别（载入耗时 ${fmtMs(performance.now() - tLoad)}）`, 'info');
+
+            // 收集所有页为任务列表（跨多个 PDF 拉平），供线程池并行消费
+            const tasks = [];
+            for (let d = 0; d < pdfDocs.length; d++) {
+                for (let p = 1; p <= pdfDocs[d].pdfjsDoc.numPages; p++) {
+                    tasks.push({ docIndex: d, pageNum: p });
+                }
+            }
+            const results = new Array(tasks.length);   // 与 tasks 一一对应：{ contractNo, fromTextLayer }
+            let processed = 0, recognized = 0;
+
+            // 单页识别：文本层快速路径 → 否则渲染后用指定 worker 做 OCR
+            async function recognizePage(task, ocrWorker) {
+                const tPage = performance.now();
+                const { pdfjsDoc } = pdfDocs[task.docIndex];
+                const page = await pdfjsDoc.getPage(task.pageNum);
+                const tag = `[第${task.pageNum}页]`;
+                console.group(`%c${tag} 识别诊断`, 'color:#0ea5e9;font-weight:bold');
+
+                // 快速路径：读 PDF 自带文本层，命中编号则免 OCR
+                let contractNo = null, fromTextLayer = false, ocrConf = null;
+                try {
+                    const tc = await page.getTextContent();
+                    const layerText = tc.items.map(it => it.str).join('\n');
+                    console.log(`${tag} 文本层字符数:`, layerText.length);
+                    if (layerText.trim()) {
+                        console.log(`${tag} 文本层内容:\n`, layerText);
+                        const r = extractContractNo(layerText);
+                        console.log(`${tag} 文本层匹配尝试:`, r.tries);
+                        if (r.no) { contractNo = r.no; fromTextLayer = true; console.log(`%c${tag} ✓ 文本层命中 [${r.no}] via ${r.method}`, 'color:#059669'); }
+                    } else {
+                        console.log(`${tag} 文本层为空 → 判定为扫描件，走 OCR`);
+                    }
+                } catch (e) { console.warn(`${tag} 读取文本层异常:`, e.message); }
+
+                let ocrRawText = '';
+                if (!contractNo) {
+                    // 中文 OCR 对字高极敏感：用高分辨率 3x，最大边长放宽到 3500px
+                    let viewport = page.getViewport({ scale: 1 });
+                    const pw1 = viewport.width, ph1 = viewport.height;   // 原始(scale=1)页面尺寸
+                    const targetScale = 3.0, MAX_SIDE = 3500;
+                    let scale = targetScale;
+                    const longSide = Math.max(pw1, ph1) * targetScale;
+                    if (longSide > MAX_SIDE) scale = MAX_SIDE / Math.max(pw1, ph1);
+                    viewport = page.getViewport({ scale });
+                    const fullW = Math.ceil(viewport.width), fullH = Math.ceil(viewport.height);
+
+                    // OCR 指定区域；cropW1/cropH1 为 scale=1 尺寸，传 null 表示整页
+                    const ocrRegion = async (cropW1, cropH1, label) => {
+                        const isFull = cropW1 == null || cropH1 == null;
+                        const cw = isFull ? fullW : Math.ceil(Math.min(pw1, cropW1) * scale);
+                        const ch = isFull ? fullH : Math.ceil(Math.min(ph1, cropH1) * scale);
+                        const canvas = document.createElement('canvas');
+                        canvas.width = cw; canvas.height = ch;
+                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);
+                        const rvp = isFull ? viewport : page.getViewport({ scale, offsetX: -(fullW - cw), offsetY: 0 });
+                        await page.render({ canvasContext: ctx, viewport: rvp }).promise;
+                        console.log(`${tag} [${label}] 渲染尺寸: ${cw}x${ch} (scale=${scale.toFixed(2)}${isFull ? '' : `, 右上角裁剪`})`);
+                        try { const th = preprocessCanvas(canvas); console.log(`${tag} [${label}] 二值化阈值(Otsu): ${th}`); }
+                        catch (e) { console.warn(`${tag} [${label}] 预处理跳过:`, e.message); }
+                        let hit = null;
+                        try {
+                            const { data } = await ocrWorker.recognize(canvas);
+                            ocrConf = data.confidence;
+                            const ocrText = data.text || '';
+                            if (isFull) ocrRawText = ocrText;   // 整页文本供 B 表锚定
+                            console.log(`${tag} [${label}] OCR 置信度: ${ocrConf}, 字符数: ${ocrText.length}`);
+                            console.log(`${tag} [${label}] OCR 原始文本:\n`, ocrText);
+                            const r = extractContractNo(ocrText);
+                            console.log(`${tag} [${label}] OCR 匹配尝试:`, r.tries);
+                            if (r.no) { hit = r.no; console.log(`%c${tag} ✓ [${label}] OCR命中 [${r.no}] via ${r.method}`, 'color:#059669'); }
+                        } catch (e) {
+                            log(`第 ${task.pageNum} 页 OCR 异常：${e.message}`, 'warning');
+                            console.error(`${tag} [${label}] OCR 异常:`, e);
+                        }
+                        canvas.width = 0; canvas.height = 0;   // 释放画布内存
+                        return hit;
+                    };
+
+                    // 整页识别：扫描合同的「合同号码」位置随排版变化、且常被 OCR 打碎，
+                    // 整页识别 + 下方 B 表锚定，比裁剪小区域更稳（实测准确率显著回升）。
+                    contractNo = await ocrRegion(null, null, '整页');
+                    if (!contractNo) console.warn(`${tag} ✗ 正则未直接命中，待 B 表锚定`);
+                }
+
+                // 记录 B 表校正前的原始识别值，用于日志/文件名显示「OCR原值」
+                let corrected = false;
+                const rawNo = contractNo;
+
+                // —— B 表锚定定位：从 OCR 全文里稳健找编号（应对打碎/误读/抓错产品型号）——
+                let resolveVia = fromTextLayer ? '文本层' : (contractNo ? 'OCR正则' : null);
+                if (bNoList && bNoList.length && ocrRawText) {
+                    const anchored = locateByBTable(ocrRawText, bNoList);
+                    if (anchored) {
+                        if (!contractNo || normNo(anchored.no) !== normNo(contractNo)) {
+                            console.log(`%c${tag} ⟳ B表锚定 [${contractNo || '(正则未命中)'}] → [${anchored.no}] via ${anchored.method}`, 'color:#7c3aed;font-weight:bold');
+                            if (rawNo && normNo(anchored.no) !== normNo(rawNo)) corrected = true;
+                        } else {
+                            console.log(`${tag} B表锚定确认 [${anchored.no}] via ${anchored.method}`);
+                        }
+                        contractNo = anchored.no;
+                        resolveVia = anchored.method;
+                    }
+                }
+
+                // —— B 表权威校正：锚定未命中时，再用编辑距离/尾号修复正则读到的编号 ——
+                if (contractNo && !corrected && bNoList && bNoList.length) {
+                    const fix = correctByList(contractNo, bNoList);
+                    if (fix && normNo(fix.no) !== normNo(contractNo)) {
+                        console.log(`%c${tag} ⟳ B表校正 [${contractNo}] → [${fix.no}] via ${fix.method}`, 'color:#7c3aed;font-weight:bold');
+                        contractNo = fix.no; corrected = true;
+                        resolveVia = fix.method;
+                    } else if (fix) {
+                        contractNo = fix.no; // 归一到 B 表标准写法（大小写/分隔符一致）
+                        resolveVia = fix.method;
+                        console.log(`${tag} B表确认编号 [${contractNo}] via ${fix.method}`);
+                    } else {
+                        console.warn(`${tag} 识别到[${contractNo}]，但在 B 表中无足够接近的编号，保留原值`);
+                    }
+                }
+                if (!contractNo) console.warn(`${tag} ✗ 未能从 OCR 文本定位到合同编号`);
+                console.groupEnd();
+                return { contractNo, rawNo, corrected, fromTextLayer, ocrConf, resolveVia, tMs: performance.now() - tPage };
+            }
+
+            // —— 阶段一：线程池并行识别 ——
+            // 用共享游标当任务队列，每个 worker 拿一个空闲任务做，做完再取下一个，天然负载均衡
+            logSection(`并行 OCR 识别（${workers.length} 线程 / ${totalPages} 页）`);
+            const tRecog = performance.now();
+            let cursor = 0;
+            async function workerLoop(ocrWorker) {
+                while (true) {
+                    const myIndex = cursor++;
+                    if (myIndex >= tasks.length) break;
+                    const r = await recognizePage(tasks[myIndex], ocrWorker);
+                    results[myIndex] = r;
+                    processed++;
+                    setPdfProgress(Math.round(processed / totalPages * 100), false);
+                    btnTextPdfEl.innerText = `识别中 ${processed}/${totalPages}`;
+                    // 每页在终端回报识别结果（含来源方式/耗时/置信度）
+                    const pn = tasks[myIndex].pageNum;
+                    if (r && r.contractNo) {
+                        const src = r.fromTextLayer ? '文本层直读' : `OCR(${r.resolveVia || '正则'})`;
+                        const fixTip = r.corrected ? ` ⟳B表校正(原 ${r.rawNo || '空'})` : '';
+                        const conf = (r.ocrConf != null && !r.fromTextLayer) ? ` 置信度${Math.round(r.ocrConf)}` : '';
+                        log(`[${processed}/${totalPages}] 第${pn}页 ✓ [${r.contractNo}] ← ${src}${fixTip}${conf}，用时 ${fmtMs(r.tMs)}`, 'success');
+                    } else {
+                        const conf = (r && r.ocrConf != null) ? ` 置信度${Math.round(r.ocrConf)}` : '';
+                        log(`[${processed}/${totalPages}] 第${pn}页 ✗ 未识别到编号（${conf || '详见F12'}），用时 ${fmtMs(r ? r.tMs : 0)}`, 'warning');
+                    }
+                }
+            }
+            await Promise.all(workers.map(w => workerLoop(w)));
+            const recogMs = performance.now() - tRecog;
+            log(`识别阶段完成：${totalPages} 页耗时 ${fmtMs(recogMs)}，平均 ${fmtMs(recogMs / Math.max(1, totalPages))}/页`, 'info');
+
+            // —— 阶段二：串行拆页 + 打包（pdf-lib 复制原页，保留扫描件原始质量）——
+            logSection('拆分单页并归档打包');
+            const tSplit = performance.now();
+            const SUFFIX = '双签';        // 文件名固定后缀
+            const usedNames = {};         // 处理同编号重名
+            let correctedCount = 0, unrecognizedCount = 0;
+            const folderStat = {};        // 各归档目录页数统计，用于汇总
+            for (let i = 0; i < tasks.length; i++) {
+                const { docIndex, pageNum } = tasks[i];
+                const { contractNo, rawNo, corrected, fromTextLayer, ocrConf } = results[i] || {};
+                const { libDoc } = pdfDocs[docIndex];
+
+                const single = await PDFLib.PDFDocument.create();
+                const [copied] = await single.copyPages(libDoc, [pageNum - 1]);
+                single.addPage(copied);
+                const singleBytes = await single.save();
+
+                let folderName, fileName;
+                if (contractNo) {
+                    recognized++;
+                    if (corrected) correctedCount++;
+                    // 文件名 = dateStr 编号 双签
+                    const base = `${dateStr} ${contractNo} ${SUFFIX}`;
+                    // 归档目录：优先放进「导出归档文件夹」里对应编号的同名子目录（作为整个流程的最后一步）
+                    const archived = folderByNo[normNo(contractNo)];
+                    folderName = archived || sanitizeName(contractNo);
+                    // 同目录多页自动追加序号，避免覆盖
+                    usedNames[folderName] = (usedNames[folderName] || 0) + 1;
+                    const idx = usedNames[folderName];
+                    fileName = sanitizeName(base) + (idx > 1 ? `_${idx}` : '') + '.pdf';
+                    const tip = corrected ? `（OCR原值 ${rawNo} 已按B表校正）` : '';
+                    const dst = archived ? `归档目录「${folderName}」` : `编号目录「${folderName}」(B表无此编号)`;
+                    log(`第 ${i + 1}/${totalPages} 页 → 编号 [${contractNo}]${tip}，存入${dst}（页大小 ${fmtBytes(singleBytes.byteLength)}）`, 'success');
+                } else {
+                    folderName = '未识别编号';
+                    unrecognizedCount++;
+                    usedNames[folderName] = (usedNames[folderName] || 0) + 1;
+                    const idx = usedNames[folderName];
+                    fileName = `${dateStr} 未识别 ${SUFFIX}` + (idx > 1 ? `_${idx}` : '') + '.pdf';
+                    const confTip = (ocrConf != null) ? `OCR置信度${Math.round(ocrConf)}，` : '';
+                    log(`第 ${i + 1}/${totalPages} 页 → 未识别到合同编号（${confTip}详见控制台 F12），归入「未识别编号」`, 'warning');
+                }
+
+                folderStat[folderName] = (folderStat[folderName] || 0) + 1;
+                rootFolder.folder(folderName).file(fileName, singleBytes);
+            }
+            log(`拆页打包完成，耗时 ${fmtMs(performance.now() - tSplit)}`, 'normal');
+
+            // —— 归档目录分布汇总 ——
+            logSection('归档分布汇总');
+            const folderNames = Object.keys(folderStat);
+            log(`共生成 ${folderNames.length} 个目录，分布如下：`, 'info');
+            folderNames.forEach(fn => {
+                const isUn = fn === '未识别编号';
+                log(`    ${isUn ? '⚠' : '•'} 「${fn}」：${folderStat[fn]} 页`, isUn ? 'warning' : 'normal');
+            });
+
+            log(`识别完成：${recognized}/${totalPages} 页提取到编号${correctedCount ? `（其中 ${correctedCount} 页经 B 表校正）` : ''}${unrecognizedCount ? `，${unrecognizedCount} 页未识别` : ''}，正在压缩打包...`, 'info');
+            const tZip = performance.now();
+            const blob = await zip.generateAsync({ type: 'blob' });
+            // 合并了归档结构时，ZIP 命名与「导出归档文件夹」一致，表示这是合并后的最终归档包
+            const zipName = mergedArchive
+                ? `${bInfo.rootName}.zip`
+                : `${dateStr}_PDF拆分_${totalPages}页.zip`;
+            saveAs(blob, zipName);
+            log(`压缩完成：ZIP 大小 ${fmtBytes(blob.size)}，压缩耗时 ${fmtMs(performance.now() - tZip)}`, 'success');
+            logSection('全流程统计');
+            log(`总页数 ${totalPages} | 已识别 ${recognized} | 未识别 ${unrecognizedCount} | B表校正 ${correctedCount} | 识别率 ${Math.round(recognized / Math.max(1, totalPages) * 100)}%`, 'info');
+            if (mergedArchive) log(`🎉 已合并导出！单个 ZIP「${zipName}」内同时包含归档文件夹(${archivedFileCount} 个 A 原文件)与拆分后的 ${totalPages} 页 PDF。全流程总耗时 ${fmtMs(performance.now() - tAll)}`, 'success');
+            else log(`🎉 PDF 识别拆分完成，已导出归档 ZIP！全流程总耗时 ${fmtMs(performance.now() - tAll)}`, 'success');
+
+        } catch (error) {
+            log(`❌ PDF 拆分失败：${error.message}`, 'error');
+        } finally {
+            // 关闭线程池所有 OCR worker，释放线程与内存
+            await Promise.all(workers.map(w => w.terminate().catch(() => {})));
+            btnPdf.disabled = false; btnGen.disabled = false; btnExp.disabled = false;
+            spinnerPdf.style.display = 'none'; btnTextPdf.innerText = '🔍 识别并拆分 PDF';
+            resetPdfProgress();
+        }
+    }
+
+    /* ==========================================================
+       炫酷特效模块 (FX)
+       - 烟花 / 星空 / 鼠标拖尾 / 飘浮表情 / 彩纸雨 / 派对模式
+       - 点击爆炸 / 标题文字爆炸 / 卡片3D倾斜 / Konami / 快捷键
+       ========================================================== */
+    (function fxInit() {
+        const canvas = document.getElementById('fxCanvas');
+        const ctx = canvas.getContext('2d');
+        let W = 0, H = 0;
+        function resize() {
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            W = canvas.width = window.innerWidth * dpr;
+            H = canvas.height = window.innerHeight * dpr;
+            canvas.style.width = window.innerWidth + 'px';
+            canvas.style.height = window.innerHeight + 'px';
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // 状态
+        const state = {
+            fireworks: false,        // 自动烟花
+            stars: false,            // 星空背景
+            trail: true,             // 鼠标拖尾（默认开）
+            floatEmoji: false,       // 飘浮表情
+            party: false,            // 派对模式
+            running: true,           // 主循环
+        };
+
+        // 粒子池
+        const particles = [];
+        const stars = [];
+        const COLORS = ['#4f46e5','#06b6d4','#f59e0b','#ef4444','#10b981','#8b5cf6','#ec4899','#fbbf24'];
+
+        function rand(a, b) { return a + Math.random() * (b - a); }
+        function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+        // ===== 烟花 =====
+        function spawnFirework(x, y, opt = {}) {
+            const cx = x ?? rand(W * 0.15, W * 0.85) / (window.devicePixelRatio || 1);
+            const cy = y ?? rand(H * 0.1, H * 0.5) / (window.devicePixelRatio || 1);
+            const count = opt.count || Math.floor(rand(50, 90));
+            const baseColor = opt.color || pick(COLORS);
+            const speed = opt.speed || rand(3, 6);
+            for (let i = 0; i < count; i++) {
+                const angle = (Math.PI * 2 * i) / count + rand(-0.05, 0.05);
+                const v = speed * rand(0.6, 1.2);
+                particles.push({
+                    type: 'spark',
+                    x: cx, y: cy,
+                    vx: Math.cos(angle) * v,
+                    vy: Math.sin(angle) * v,
+                    life: rand(60, 100),
+                    age: 0,
+                    size: rand(1.5, 3),
+                    color: Math.random() < 0.3 ? pick(COLORS) : baseColor,
+                    gravity: 0.04,
+                    drag: 0.985,
+                });
+            }
+            // 中心闪光
+            particles.push({
+                type: 'flash', x: cx, y: cy,
+                life: 12, age: 0, size: 30, color: '#fff'
+            });
+        }
+
+        // 升空烟花（带尾迹）
+        function launchRocket() {
+            const startX = rand(window.innerWidth * 0.1, window.innerWidth * 0.9);
+            const targetY = rand(window.innerHeight * 0.15, window.innerHeight * 0.45);
+            const color = pick(COLORS);
+            particles.push({
+                type: 'rocket',
+                x: startX, y: window.innerHeight + 10,
+                vx: rand(-0.5, 0.5),
+                vy: -rand(7, 10),
+                targetY,
+                color,
+                size: 2.4,
+                age: 0, life: 999,
+            });
+        }
+
+        // ===== 星空 =====
+        function initStars(n = 80) {
+            stars.length = 0;
+            for (let i = 0; i < n; i++) {
+                stars.push({
+                    x: Math.random() * window.innerWidth,
+                    y: Math.random() * window.innerHeight,
+                    r: rand(0.3, 1.6),
+                    a: rand(0.3, 1),
+                    twinkle: rand(0.005, 0.025),
+                    dir: 1,
+                });
+            }
+        }
+        function drawStars() {
+            for (const s of stars) {
+                s.a += s.twinkle * s.dir;
+                if (s.a >= 1) s.dir = -1;
+                if (s.a <= 0.2) s.dir = 1;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(99,102,241,${s.a * 0.7})`;
+                ctx.fill();
+            }
+        }
+
+        // ===== 主循环 =====
+        let lastFire = 0;
+        function loop(ts) {
+            if (!state.running) return;
+            // 半透明清屏：留下拖尾效果
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = state.stars ? 'rgba(240, 244, 255, 0.18)' : 'rgba(240, 244, 255, 0.35)';
+            ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+            if (state.stars) drawStars();
+
+            // 自动烟花
+            if (state.fireworks && ts - lastFire > rand(700, 1400)) {
+                launchRocket();
+                lastFire = ts;
+            }
+
+            // 粒子绘制
+            ctx.globalCompositeOperation = 'lighter';
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.age++;
+                if (p.type === 'rocket') {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += 0.08;
+                    // 拖尾
+                    particles.push({
+                        type: 'trail', x: p.x, y: p.y,
+                        vx: rand(-0.3, 0.3), vy: rand(-0.3, 0.3),
+                        life: 20, age: 0, size: 1.6, color: p.color,
+                    });
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    // 到顶爆炸
+                    if (p.y <= p.targetY || p.vy >= 0) {
+                        spawnFirework(p.x, p.y, { color: p.color });
+                        particles.splice(i, 1);
+                    }
+                } else if (p.type === 'spark') {
+                    p.vx *= p.drag;
+                    p.vy *= p.drag;
+                    p.vy += p.gravity;
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    const alpha = Math.max(0, 1 - p.age / p.life);
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = alpha;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                    if (p.age >= p.life) particles.splice(i, 1);
+                } else if (p.type === 'flash') {
+                    const alpha = Math.max(0, 1 - p.age / p.life);
+                    const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+                    grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
+                    grad.addColorStop(1, 'rgba(255,255,255,0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    if (p.age >= p.life) particles.splice(i, 1);
+                } else if (p.type === 'trail') {
+                    p.x += p.vx; p.y += p.vy;
+                    const alpha = Math.max(0, 1 - p.age / p.life);
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = alpha * 0.7;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                    if (p.age >= p.life) particles.splice(i, 1);
+                } else if (p.type === 'click') {
+                    p.vx *= 0.95; p.vy *= 0.95;
+                    p.vy += 0.15;
+                    p.x += p.vx; p.y += p.vy;
+                    const alpha = Math.max(0, 1 - p.age / p.life);
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = alpha;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                    if (p.age >= p.life) particles.splice(i, 1);
+                }
+            }
+            ctx.globalCompositeOperation = 'source-over';
+
+            requestAnimationFrame(loop);
+        }
+        requestAnimationFrame(loop);
+
+        // ===== 鼠标拖尾 =====
+        let lastTrail = 0;
+        document.addEventListener('mousemove', (e) => {
+            if (!state.trail) return;
+            const now = performance.now();
+            if (now - lastTrail < 30) return;
+            lastTrail = now;
+            const dot = document.createElement('div');
+            dot.className = 'fx-trail';
+            const size = rand(6, 14);
+            dot.style.width = size + 'px';
+            dot.style.height = size + 'px';
+            dot.style.left = (e.clientX - size / 2) + 'px';
+            dot.style.top = (e.clientY - size / 2) + 'px';
+            const c1 = pick(COLORS), c2 = pick(COLORS);
+            dot.style.background = `radial-gradient(circle, ${c1} 0%, ${c2} 60%, transparent 100%)`;
+            dot.style.opacity = '0.9';
+            dot.style.transition = 'transform 0.7s ease-out, opacity 0.7s ease-out';
+            document.body.appendChild(dot);
+            requestAnimationFrame(() => {
+                dot.style.transform = `translate(${rand(-30, 30)}px, ${rand(-30, 30)}px) scale(0.2)`;
+                dot.style.opacity = '0';
+            });
+            setTimeout(() => dot.remove(), 750);
+        });
+
+        // ===== 点击爆炸 =====
+        document.addEventListener('click', (e) => {
+            // 点击在按钮/输入框等交互元素也加爆炸（不影响功能）
+            const x = e.clientX, y = e.clientY;
+            const count = 16;
+            for (let i = 0; i < count; i++) {
+                const angle = (Math.PI * 2 * i) / count + rand(-0.2, 0.2);
+                const v = rand(2, 5);
+                particles.push({
+                    type: 'click',
+                    x, y,
+                    vx: Math.cos(angle) * v,
+                    vy: Math.sin(angle) * v,
+                    life: rand(40, 60),
+                    age: 0,
+                    size: rand(2, 4),
+                    color: pick(COLORS),
+                });
+            }
+        });
+
+        // ===== 飘浮表情 =====
+        const FLOAT_EMOJI = ['🐶','🦴','✨','🌟','💫','🎈','💎','🎁','🐾','⭐','🍀','💖','🚀','🌸','🎀','🐕'];
+        let floatTimer = null;
+        function spawnFloat() {
+            const span = document.createElement('span');
+            span.className = 'fx-float';
+            span.textContent = pick(FLOAT_EMOJI);
+            span.style.left = rand(0, window.innerWidth - 40) + 'px';
+            span.style.fontSize = rand(20, 42) + 'px';
+            span.style.setProperty('--fx-sway', rand(-60, 60) + 'px');
+            const dur = rand(8, 14);
+            span.style.animationDuration = dur + 's';
+            document.body.appendChild(span);
+            setTimeout(() => span.remove(), dur * 1000 + 200);
+        }
+        function setFloat(on) {
+            if (on && !floatTimer) {
+                floatTimer = setInterval(spawnFloat, 600);
+            } else if (!on && floatTimer) {
+                clearInterval(floatTimer);
+                floatTimer = null;
+            }
+        }
+
+        // ===== 彩纸雨（一次性大量喷发） =====
+        function spawnConfetti(amount = 120) {
+            for (let i = 0; i < amount; i++) {
+                const el = document.createElement('div');
+                el.className = 'fx-confetti';
+                el.style.left = rand(0, window.innerWidth) + 'px';
+                el.style.background = pick(COLORS);
+                el.style.width = rand(6, 12) + 'px';
+                el.style.height = rand(10, 18) + 'px';
+                const dur = rand(2.5, 5);
+                el.style.animationDuration = dur + 's';
+                el.style.animationDelay = rand(0, 0.8) + 's';
+                el.style.transform = `rotate(${rand(0, 360)}deg)`;
+                document.body.appendChild(el);
+                setTimeout(() => el.remove(), (dur + 1) * 1000);
+            }
+        }
+
+        // ===== Toast =====
+        const toastEl = document.getElementById('fxToast');
+        let toastTimer = null;
+        function toast(msg) {
+            toastEl.textContent = msg;
+            toastEl.classList.add('show');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+        }
+
+        // ===== 卡片 3D 倾斜 =====
+        document.querySelectorAll('.card').forEach(card => {
+            card.addEventListener('mousemove', (e) => {
+                const rect = card.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+                const dx = (e.clientX - cx) / rect.width;
+                const dy = (e.clientY - cy) / rect.height;
+                card.style.transform = `perspective(1000px) rotateY(${dx * 4}deg) rotateX(${-dy * 4}deg) translateY(-2px)`;
+                card.classList.add('fx-tilt');
+            });
+            card.addEventListener('mouseleave', () => {
+                card.style.transform = '';
+                card.classList.remove('fx-tilt');
+            });
+        });
+
+        // ===== 标题文字爆炸 =====
+        const h1 = document.querySelector('.header h1');
+        if (h1) {
+            h1.addEventListener('click', () => {
+                const rect = h1.getBoundingClientRect();
+                const text = h1.textContent;
+                for (let i = 0; i < text.length; i++) {
+                    const ch = text[i];
+                    if (!ch.trim()) continue;
+                    const span = document.createElement('span');
+                    span.className = 'fx-pop-char';
+                    span.textContent = ch;
+                    span.style.left = (rect.left + (rect.width / text.length) * i) + 'px';
+                    span.style.top = rect.top + 'px';
+                    document.body.appendChild(span);
+                    const dx = rand(-200, 200), dy = rand(-300, -100);
+                    span.style.transition = 'transform 1s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 1s';
+                    requestAnimationFrame(() => {
+                        span.style.transform = `translate(${dx}px, ${dy}px) rotate(${rand(-540, 540)}deg) scale(${rand(0.5, 1.8)})`;
+                        span.style.opacity = '0';
+                    });
+                    setTimeout(() => span.remove(), 1100);
+                }
+                spawnFirework();
+                toast('🎆 BOOM！');
+            });
+        }
+
+        // ===== 工具栏按钮 =====
+        function bindBtn(id, key, onToggle) {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            btn.addEventListener('click', () => {
+                onToggle(btn);
+            });
+        }
+        bindBtn('fxBtnFireworks', 'F', (btn) => {
+            state.fireworks = !state.fireworks;
+            btn.classList.toggle('active', state.fireworks);
+            toast(state.fireworks ? '🎆 自动烟花已开启' : '🎆 自动烟花已关闭');
+            if (state.fireworks) { launchRocket(); launchRocket(); }
+        });
+        bindBtn('fxBtnStars', 'S', (btn) => {
+            state.stars = !state.stars;
+            btn.classList.toggle('active', state.stars);
+            if (state.stars) initStars();
+            else stars.length = 0;
+            toast(state.stars ? '✨ 星空已开启' : '✨ 星空已关闭');
+        });
+        bindBtn('fxBtnTrail', 'T', (btn) => {
+            state.trail = !state.trail;
+            btn.classList.toggle('active', state.trail);
+            toast(state.trail ? '🌈 鼠标拖尾已开启' : '🌈 鼠标拖尾已关闭');
+        });
+        bindBtn('fxBtnFloat', 'E', (btn) => {
+            state.floatEmoji = !state.floatEmoji;
+            btn.classList.toggle('active', state.floatEmoji);
+            setFloat(state.floatEmoji);
+            toast(state.floatEmoji ? '🐶 漂浮表情已开启' : '🐶 漂浮表情已关闭');
+        });
+        bindBtn('fxBtnConfetti', 'C', () => {
+            spawnConfetti(150);
+            spawnFirework();
+            toast('🎉 撒花啦！');
+        });
+        bindBtn('fxBtnParty', 'P', (btn) => {
+            state.party = !state.party;
+            btn.classList.toggle('active', state.party);
+            document.body.classList.toggle('party-mode', state.party);
+            if (state.party) {
+                state.fireworks = true;
+                state.stars = true;
+                state.floatEmoji = true;
+                document.getElementById('fxBtnFireworks').classList.add('active');
+                document.getElementById('fxBtnStars').classList.add('active');
+                document.getElementById('fxBtnFloat').classList.add('active');
+                initStars();
+                setFloat(true);
+                spawnConfetti(200);
+                toast('🎊 派对模式开启！全员狂欢！');
+            } else {
+                toast('🎊 派对结束，回归冷静');
+            }
+        });
+        bindBtn('fxBtnClear', null, () => {
+            state.fireworks = state.stars = state.floatEmoji = state.party = false;
+            state.trail = false;
+            document.body.classList.remove('party-mode');
+            stars.length = 0;
+            particles.length = 0;
+            setFloat(false);
+            ['fxBtnFireworks','fxBtnStars','fxBtnTrail','fxBtnFloat','fxBtnParty'].forEach(id => {
+                document.getElementById(id).classList.remove('active');
+            });
+            toast('⏹️ 所有特效已关闭');
+        });
+
+        // 默认打开拖尾按钮的视觉态
+        document.getElementById('fxBtnTrail').classList.add('active');
+
+        // ===== 快捷键 =====
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            const k = e.key.toLowerCase();
+            if (k === 'f') document.getElementById('fxBtnFireworks').click();
+            else if (k === 's') document.getElementById('fxBtnStars').click();
+            else if (k === 't') document.getElementById('fxBtnTrail').click();
+            else if (k === 'e') document.getElementById('fxBtnFloat').click();
+            else if (k === 'c') document.getElementById('fxBtnConfetti').click();
+            else if (k === 'p') document.getElementById('fxBtnParty').click();
+            else if (k === ' ') { e.preventDefault(); spawnFirework(); }
+        });
+
+        // ===== Konami Code =====
+        const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+        let konamiIdx = 0;
+        document.addEventListener('keydown', (e) => {
+            const need = KONAMI[konamiIdx];
+            if (e.key === need || e.key.toLowerCase() === need) {
+                konamiIdx++;
+                if (konamiIdx === KONAMI.length) {
+                    konamiIdx = 0;
+                    document.getElementById('fxBtnParty').click();
+                    for (let i = 0; i < 5; i++) setTimeout(() => spawnFirework(), i * 200);
+                    toast('🐶 KONAMI！菲尼狗派对启动！');
+                }
+            } else {
+                konamiIdx = 0;
+            }
+        });
+
+        // 暴露给外部，方便调试
+        window.fx = { spawnFirework, spawnConfetti, toast, state };
+
+        // 启动欢迎彩蛋（轻量）
+        setTimeout(() => {
+            spawnConfetti(40);
+            spawnFirework();
+            toast('🐶 欢迎！右下角试试特效按钮，或按空格放烟花～');
+        }, 600);
+    })();
+
+</script>
+</body>
+</html>
