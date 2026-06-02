@@ -1328,7 +1328,10 @@
                 if (!targetContractNo || !targetCustOrderNo) { skipEmpty++; return; }
                 let match = targetContractNo.match(/-(\d+)$/);
                 if (!match) { skipBadFormat++; log(`第 ${rowNum} 行 [${targetContractNo}] 编号尾号格式不符（缺 -数字），跳过`, 'warning'); return; }
-                let targetSheetName = `采购合同 (${match[1]})`;
+                // 用完整合同号命名工作表（旧规则只取尾号会导致 GYCG-HF26010-11 / GYCG-HF26011-11 互相覆盖）
+                let safeContractNo = targetContractNo.replace(/[\\\/\*\?\:\[\]']/g, '_');
+                let targetSheetName = `采购合同 (${safeContractNo})`;
+                if (targetSheetName.length > 31) targetSheetName = '采购合同 (' + safeContractNo.slice(-24) + ')';
 
                 // 获取匹配的数据源以及提取出的消费使用单位
                 let aDataObj = sourceDataMap[targetCustOrderNo];
