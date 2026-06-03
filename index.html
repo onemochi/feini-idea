@@ -566,6 +566,86 @@
         .toggle-switch input:checked ~ .toggle-track { background: linear-gradient(135deg, var(--primary), var(--accent)); }
         .toggle-switch input:checked ~ .toggle-thumb { transform: translateX(18px); }
 
+        /* ============ 归档日期选择器 ============ */
+        .global-config-row {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 18px;
+        }
+        .date-input-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            background: white;
+            border: 1.5px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 18px;
+            box-shadow: 0 2px 12px rgba(79,70,229,0.08);
+            transition: all 0.25s;
+            flex-wrap: wrap;
+        }
+        .date-input-wrap:hover {
+            border-color: var(--border-active);
+            box-shadow: 0 4px 18px rgba(79,70,229,0.14);
+        }
+        .date-input-wrap-label {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text);
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+        }
+        .date-input-wrap input[type="date"] {
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-sub);
+            font-family: 'Consolas', 'Monaco', monospace;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.2s;
+            background: var(--card2);
+        }
+        .date-input-wrap input[type="date"]:hover {
+            border-color: var(--border-active);
+            background: white;
+        }
+        .date-input-wrap input[type="date"]:focus {
+            border-color: var(--primary);
+            background: white;
+            box-shadow: 0 0 0 3px var(--primary-glow);
+        }
+        .date-input-hint {
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+        .date-yyyymmdd-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(6,182,212,0.08));
+            border: 1px solid var(--border);
+            color: var(--text-sub);
+            font-family: monospace;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 6px;
+            letter-spacing: 0.5px;
+        }
+        @keyframes dateFlash {
+            0%, 100% { background-color: var(--card2); border-color: var(--border); }
+            25%      { background-color: #d1fae5; border-color: var(--success); box-shadow: 0 0 0 4px rgba(5,150,105,0.15); }
+        }
+        .date-input-wrap input[type="date"].flash {
+            animation: dateFlash 1.4s ease-out;
+        }
+
         /*FX_CSS_TODO*/
 
         /* 标题指针态（保留轻量交互，无脚本副作用） */
@@ -731,6 +811,14 @@
     </div>
 
     <div class="card">
+        <div class="global-config-row">
+            <label class="date-input-wrap" title="决定归档文件夹名 / 拆分 PDF 文件名前缀的日期，默认今天">
+                <span class="date-input-wrap-label">📅 归档日期</span>
+                <input type="date" id="archiveDate" onchange="onArchiveDateChange()">
+                <span class="date-yyyymmdd-chip" id="archiveDateChip">—</span>
+                <span class="date-input-hint">将用作目录名前缀，PDF 文件名识别到日期会自动填入</span>
+            </label>
+        </div>
         <div class="step-group">
             <div class="step-box" id="boxA">
                 <div class="step-badge">STEP 01</div>
@@ -873,9 +961,93 @@
                 const dtNew = new DataTransfer(); dtNew.items.add(dt.files[0]); fileInput.files = dtNew.files;
             } else { fileInput.files = dt.files; }
             updateFileName(inputId, displayId, boxId);
+            // 编程式赋值 input.files 不会自动触发 change，这里手动派发，让 onchange 钩子（如 updatePdfName）跑起来
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
         }, false);
     }
-    window.addEventListener('DOMContentLoaded', () => { initDragAndDrop(); initPrankToggle(); loadDefaultTemplate(); detectOcrEngine(); initUpdater(); });
+    window.addEventListener('DOMContentLoaded', () => { initDragAndDrop(); initPrankToggle(); initArchiveDate(); loadDefaultTemplate(); detectOcrEngine(); initUpdater(); });
+
+    // ============ 归档日期：选择 + 文件名自动解析 ============
+    // 全局唯一来源：归档目录命名 / PDF 拆分文件名前缀都从这里取日期
+    function initArchiveDate() {
+        const input = document.getElementById('archiveDate');
+        const chip = document.getElementById('archiveDateChip');
+        if (!input) return;
+        // 默认今天（YYYY-MM-DD，date input 要求的格式）
+        const t = new Date();
+        const yyyy = t.getFullYear();
+        const mm = String(t.getMonth() + 1).padStart(2, '0');
+        const dd = String(t.getDate()).padStart(2, '0');
+        input.value = `${yyyy}-${mm}-${dd}`;
+        if (chip) chip.textContent = `${String(yyyy).slice(-2)}${mm}${dd}`;
+    }
+    function onArchiveDateChange() {
+        const input = document.getElementById('archiveDate');
+        const chip = document.getElementById('archiveDateChip');
+        if (!input || !chip) return;
+        const m = String(input.value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        chip.textContent = m ? `${m[1].slice(-2)}${m[2]}${m[3]}` : '—';
+    }
+    // 取当前 dateStr（YYMMDD），供归档/PDF 模块共用
+    function getArchiveDateStr() {
+        const input = document.getElementById('archiveDate');
+        const m = input && String(input.value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (m) return `${m[1].slice(-2)}${m[2]}${m[3]}`;
+        // 兜底：今天
+        const t = new Date();
+        return `${String(t.getFullYear()).slice(-2)}${String(t.getMonth() + 1).padStart(2, '0')}${String(t.getDate()).padStart(2, '0')}`;
+    }
+    // 从 PDF 文件名里抓日期：YYMMDD / YYYYMMDD / YYYY-MM-DD / YY-MM-DD / YY.MM.DD 等常见写法
+    // 命中后返回 YYYY-MM-DD，无命中返回 null
+    function pickDateFromFileName(name) {
+        if (!name) return null;
+        const base = String(name).replace(/\.[^.]+$/, '');     // 去扩展名
+        // 1) YYYY-MM-DD / YYYY_MM_DD / YYYY.MM.DD / YYYY/MM/DD / YYYYMMDD
+        let m = base.match(/(?:^|[^0-9])(20\d{2})[-_.\/]?(\d{2})[-_.\/]?(\d{2})(?![0-9])/);
+        if (m) {
+            const y = +m[1], mo = +m[2], d = +m[3];
+            if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+                return `${m[1]}-${m[2]}-${m[3]}`;
+            }
+        }
+        // 2) YYMMDD / YY-MM-DD / YY.MM.DD（要求两端是非数字边界，避免误吃合同号里的 26010 等）
+        m = base.match(/(?:^|[^0-9])(\d{2})[-_.\/]?(\d{2})[-_.\/]?(\d{2})(?![0-9])/);
+        if (m) {
+            const yy = +m[1], mo = +m[2], d = +m[3];
+            if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+                // 20xx 还是 19xx：YY ≤ 当前年后两位 + 5 都视为 20xx，否则 19xx（合同场景几乎都是当代）
+                const cur = new Date().getFullYear() % 100;
+                const yyyy = (yy <= cur + 5) ? 2000 + yy : 1900 + yy;
+                return `${yyyy}-${m[2]}-${m[3]}`;
+            }
+        }
+        return null;
+    }
+    // 从一组文件里挑第一个能解析出来的日期，写入归档日期 input 并加 flash 高亮
+    function tryAutoFillDateFromFiles(files, sourceTag) {
+        if (!files || !files.length) return;
+        for (const f of files) {
+            const iso = pickDateFromFileName(f.name);
+            if (iso) {
+                const input = document.getElementById('archiveDate');
+                if (!input) return;
+                const changed = input.value !== iso;
+                input.value = iso;
+                onArchiveDateChange();
+                input.classList.remove('flash');
+                void input.offsetWidth;       // 重启动画
+                input.classList.add('flash');
+                if (changed) {
+                    log(`已根据${sourceTag || '文件名'}自动设置归档日期：${iso}（来源：${f.name}）`, 'success');
+                } else {
+                    log(`${sourceTag || '文件名'}识别到日期 ${iso}，与当前归档日期一致，无需修改（来源：${f.name}）`, 'info');
+                }
+                return;
+            }
+        }
+        // 没有任何文件能解析出日期：明确告知，便于排查
+        log(`${sourceTag || '文件名'}里未识别到日期（已尝试 ${files.length} 个文件），归档日期保持不变`, 'warning');
+    }
 
     // 自动更新通知条：订阅主进程 autoUpdater 事件，按状态切换 UI
     function initUpdater() {
@@ -1579,11 +1751,7 @@
 
             // 3. 准备 ZIP 环境
             const zip = new JSZip();
-            const today = new Date();
-            const yy = String(today.getFullYear()).slice(-2);
-            const mm = String(today.getMonth() + 1).padStart(2, '0');
-            const dd = String(today.getDate()).padStart(2, '0');
-            const dateStr = `${yy}${mm}${dd}`;
+            const dateStr = getArchiveDateStr();
 
             // 使用有效任务清单数量命名根目录
             const rootFolderName = `${dateStr} XD ${validCount}单`;
@@ -1648,6 +1816,11 @@
 
     function updatePdfName() {
         updateFileName('filePdf', 'namePdf', 'boxPdf');
+        // 上传/拖入 PDF 后，若文件名里带日期，则默认设置为归档日期
+        const filePdfInput = document.getElementById('filePdf');
+        if (filePdfInput && filePdfInput.files && filePdfInput.files.length) {
+            tryAutoFillDateFromFiles(filePdfInput.files, 'PDF 文件名');
+        }
     }
 
     // 在指定文本里抽取「合同编号 / 合同号码」后面的值
@@ -2228,8 +2401,7 @@
             log(`✓ ${ocrAdapter.label} 就绪（${ocrAdapter.poolSize} 并行 / 初始化耗时 ${fmtMs(performance.now() - tInit)}）`, 'success');
 
             const zip = new JSZip();
-            const today = new Date();
-            const dateStr = `${String(today.getFullYear()).slice(-2)}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+            const dateStr = getArchiveDateStr();
 
             // 读取 B 表：得到校正用编号库 + 编号→归档目录名映射（与「导出归档文件夹」目录结构一致）
             logSection('载入 B 表校正库与归档结构');

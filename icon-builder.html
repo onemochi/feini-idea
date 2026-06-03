@@ -1,0 +1,197 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>菲尼合同引擎 - 图标生成器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: "Microsoft YaHei", "Segoe UI", sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 50px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 { color: #333; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        .preview {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin: 40px 0;
+            flex-wrap: wrap;
+        }
+        .preview-item {
+            text-align: center;
+        }
+        .preview-item svg {
+            border: 1px solid #eee;
+            border-radius: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .preview-label {
+            margin-top: 10px;
+            color: #666;
+            font-size: 14px;
+        }
+        .buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 30px;
+        }
+        button {
+            padding: 15px 35px;
+            font-size: 16px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(102,126,234,0.3); }
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        .btn-secondary:hover { background: #e0e0e0; }
+        .steps {
+            text-align: left;
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 12px;
+            margin-top: 30px;
+        }
+        .steps h3 { color: #333; margin-bottom: 15px; }
+        .steps ol { padding-left: 20px; color: #555; line-height: 2; }
+        .steps a { color: #667eea; text-decoration: none; }
+        .steps a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 菲尼合同引擎</h1>
+        <p class="subtitle">图标生成器</p>
+        
+        <div class="preview">
+            <div class="preview-item">
+                <svg id="icon256" width="256" height="256" viewBox="0 0 256 256"></svg>
+                <div class="preview-label">256x256</div>
+            </div>
+            <div class="preview-item">
+                <svg id="icon128" width="128" height="128" viewBox="0 0 256 256"></svg>
+                <div class="preview-label">128x128</div>
+            </div>
+            <div class="preview-item">
+                <svg id="icon64" width="64" height="64" viewBox="0 0 256 256"></svg>
+                <div class="preview-label">64x64</div>
+            </div>
+        </div>
+        
+        <div class="buttons">
+            <button class="btn-primary" onclick="downloadPNG(256)">下载 256x256 PNG</button>
+            <button class="btn-primary" onclick="downloadPNG(512)">下载 512x512 PNG</button>
+            <button class="btn-secondary" onclick="downloadSVG()">下载 SVG</button>
+        </div>
+        
+        <div class="steps">
+            <h3>📋 使用步骤</h3>
+            <ol>
+                <li>点击上方按钮下载 PNG 图片（推荐 256x256 或 512x512）</li>
+                <li>将 PNG 转换为 ICO 格式：推荐使用 <a href="https://convertio.co/zh/png-ico/" target="_blank">Convertio</a> 或 <a href="https://www.icoconverter.com/" target="_blank">ICO Converter</a></li>
+                <li>将生成的 ICO 文件命名为 <strong>icon.ico</strong> 并放在项目根目录</li>
+                <li>重新运行 <strong>npm run build</strong> 打包即可！</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const svgContent = `
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- 蓝色渐变背景 -->
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#5B9BD5"/>
+      <stop offset="100%" style="stop-color:#2E75B5"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="40" fill="url(#grad1)"/>
+  
+  <!-- 合同文档图标 -->
+  <g transform="translate(128, 120)">
+    <!-- 文档背景 -->
+    <rect x="-55" y="-65" width="110" height="130" rx="6" fill="white" opacity="0.95"/>
+    <!-- 文档折角 -->
+    <path d="M35,-65 L55,-65 L55,-45 Z" fill="#E8F0FF"/>
+    <!-- 文字行 -->
+    <rect x="-40" y="-40" width="60" height="8" rx="3" fill="#4472C4" opacity="0.8"/>
+    <rect x="-40" y="-22" width="70" height="8" rx="3" fill="#4472C4" opacity="0.6"/>
+    <rect x="-40" y="-4" width="55" height="8" rx="3" fill="#4472C4" opacity="0.8"/>
+    <rect x="-40" y="14" width="65" height="8" rx="3" fill="#4472C4" opacity="0.6"/>
+    <rect x="-40" y="32" width="50" height="8" rx="3" fill="#4472C4" opacity="0.8"/>
+  </g>
+  
+  <!-- "菲尼" 文字（如果字体可用） -->
+  <text x="128" y="220" text-anchor="middle" font-family="Microsoft YaHei, SimHei, sans-serif" font-size="38" font-weight="bold" fill="white" opacity="0.95">菲尼</text>
+</svg>
+`;
+        
+        // 显示预览
+        document.getElementById('icon256').innerHTML = svgContent.replace(/<svg[^>]*>/, '').replace(/<\/svg>/, '');
+        document.getElementById('icon128').innerHTML = svgContent.replace(/<svg[^>]*>/, '').replace(/<\/svg>/, '');
+        document.getElementById('icon64').innerHTML = svgContent.replace(/<svg[^>]*>/, '').replace(/<\/svg>/, '');
+        
+        function downloadPNG(size) {
+            const svg = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(svg);
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d');
+                
+                // 绘制背景（平滑）
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, size, size);
+                
+                canvas.toBlob(function(blob) {
+                    const link = document.createElement('a');
+                    link.download = 'icon-' + size + '.png';
+                    link.href = URL.createObjectURL(blob);
+                    link.click();
+                    URL.revokeObjectURL(url);
+                }, 'image/png');
+            };
+            img.src = url;
+        }
+        
+        function downloadSVG() {
+            const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+            const link = document.createElement('a');
+            link.download = 'icon.svg';
+            link.href = URL.createObjectURL(blob);
+            link.click();
+        }
+    </script>
+</body>
+</html>

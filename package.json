@@ -1,7 +1,7 @@
 {
   "name": "feini-contract-engine",
   "productName": "菲尼合同引擎",
-  "version": "1.0.6",
+  "version": "1.0.14",
   "description": "Excel 智能合同生成 + Windows 系统级 OCR PDF 拆分",
   "main": "electron/main.js",
   "author": "feini",
@@ -9,11 +9,17 @@
     "start": "electron .",
     "build": "electron-builder --win --x64",
     "build:portable": "electron-builder --win portable --x64",
-    "release": "electron-builder --win nsis portable --x64 && node scripts/release.js"
+    "release": "electron-builder --win nsis portable --x64 && node scripts/release.js",
+    "release:dry": "electron-builder --win nsis portable --x64 && node scripts/release.js --dry-run",
+    "release:gitee": "node gitee-release.js"
   },
   "devDependencies": {
+    "axios": "^1.17.0",
+    "dotenv": "^17.4.2",
     "electron": "27.3.11",
-    "electron-builder": "24.13.3"
+    "electron-builder": "24.13.3",
+    "form-data": "^4.0.5",
+    "png-to-ico": "^2.1.8"
   },
   "build": {
     "appId": "com.feini.contract.engine",
@@ -24,6 +30,7 @@
     "files": [
       "electron/**/*",
       "index.html",
+      "icon.ico",
       "ceshi/**/*",
       "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
@@ -54,7 +61,8 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "icon": "icon.ico"
     },
     "nsis": {
       "oneClick": false,
