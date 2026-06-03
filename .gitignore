@@ -3,8 +3,3 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
-
-# 发布产物（由 npm run release 生成；二进制不入库）
-# netlify-site/updates/*.exe
-# netlify-site/updates/*.blockmap
-# netlify-site/updates/*.yml

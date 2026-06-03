@@ -1,2 +1,0 @@
-# 占位文件，避免 git 提交时空目录被忽略。
-# 真正的 latest.yml / *.exe / *.blockmap 由 `npm run release` 自动拷入此目录。

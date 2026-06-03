@@ -1,5 +1,0 @@
-[build]
-  publish = "."
-  command = ""
-
-# 静态文件直传，不需要构建
