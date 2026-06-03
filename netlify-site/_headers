@@ -1,0 +1,8 @@
+/updates/*.yml
+  Cache-Control: public, max-age=0, must-revalidate
+
+/updates/*.blockmap
+  Cache-Control: public, max-age=300
+
+/updates/*.exe
+  Cache-Control: public, max-age=86400

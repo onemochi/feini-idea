@@ -738,9 +738,146 @@
 
         /* 终端绿点旋转 */
         .terminal-status:hover { transform: scale(1.1); }
+
+        /* ============ 版本徽章 + 检查更新按钮 ============ */
+        .version-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 14px;
+            flex-wrap: wrap;
+        }
+        .version-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: white;
+            border: 1.5px solid var(--border);
+            color: var(--text-sub);
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            font-family: monospace;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 8px rgba(79,70,229,0.07);
+        }
+        .version-chip::before {
+            content: '';
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--success), var(--success-light));
+            box-shadow: 0 0 6px rgba(5,150,105,0.5);
+        }
+        .check-update-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: white;
+            border: 1.5px solid var(--border-active);
+            color: var(--primary);
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .check-update-btn:hover:not(:disabled) {
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            color: white;
+            border-color: transparent;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(79,70,229,0.25);
+        }
+        .check-update-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .check-update-btn .spin-icon {
+            display: inline-block;
+            transition: transform 0.5s;
+        }
+        .check-update-btn.checking .spin-icon {
+            animation: chkSpin 0.8s linear infinite;
+        }
+        @keyframes chkSpin { to { transform: rotate(360deg); } }
+
+        /* ============ 自动更新通知条 ============ */
+        .upd-bar {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 9998;
+            background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
+            color: white;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            font-size: 13px;
+            font-weight: 600;
+            box-shadow: 0 4px 16px rgba(79,70,229,0.25);
+            transform: translateY(-100%);
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .upd-bar.show { transform: translateY(0); }
+        .upd-bar .upd-icon { font-size: 18px; }
+        .upd-bar .upd-msg { flex: 1; }
+        .upd-bar .upd-progress {
+            flex: 0 0 160px;
+            height: 4px;
+            background: rgba(255,255,255,0.25);
+            border-radius: 2px;
+            overflow: hidden;
+            display: none;
+        }
+        .upd-bar.downloading .upd-progress { display: block; }
+        .upd-bar .upd-progress-fill {
+            height: 100%;
+            width: 0%;
+            background: white;
+            border-radius: 2px;
+            transition: width 0.25s;
+        }
+        .upd-bar .upd-btn {
+            background: white;
+            color: #4f46e5;
+            border: none;
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 12px;
+            cursor: pointer;
+            display: none;
+            transition: transform 0.2s;
+        }
+        .upd-bar.ready .upd-btn { display: inline-block; }
+        .upd-bar .upd-btn:hover { transform: scale(1.05); }
+        .upd-bar .upd-close {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.4);
+            color: white;
+            border-radius: 4px;
+            padding: 3px 10px;
+            font-size: 11px;
+            cursor: pointer;
+            opacity: 0.85;
+        }
+        .upd-bar .upd-close:hover { opacity: 1; background: rgba(255,255,255,0.12); }
     </style>
 </head>
 <body>
+
+<!-- 自动更新通知条（默认隐藏，有更新时由 JS 控制 show/downloading/ready） -->
+<div class="upd-bar" id="updBar">
+    <span class="upd-icon" id="updIcon">⬆️</span>
+    <span class="upd-msg" id="updMsg">发现新版本</span>
+    <div class="upd-progress"><div class="upd-progress-fill" id="updProgressFill"></div></div>
+    <button class="upd-btn" id="updInstallBtn">立即重启更新</button>
+    <button class="upd-close" id="updCloseBtn">稍后</button>
+</div>
 
 <!-- 特效画布（烟花/星辰/烟雾） -->
 <canvas id="fxCanvas"></canvas>
@@ -768,6 +905,13 @@
             <span>独立引用自动平移</span>
             <span>支持一键导出归档文件夹</span>
         </p>
+        <div class="version-row">
+            <span class="version-chip" id="versionChip">v—</span>
+            <button class="check-update-btn" id="btnCheckUpdate" type="button" title="手动检查是否有新版本">
+                <span class="spin-icon">🔄</span>
+                <span id="btnCheckUpdateText">检查更新</span>
+            </button>
+        </div>
     </div>
 
     <div class="card">
@@ -831,7 +975,7 @@
                 <div class="step-badge" style="background: linear-gradient(135deg,#0ea5e9,#f59e0b);">PDF 模块</div>
                 <div class="step-icon">📑</div>
                 <div class="step-title">导入待拆分 PDF（扫描件）</div>
-                <div class="step-desc">逐页 OCR 识别「合同编号 / 合同号码」，按编号拆分归档（可多选多个 PDF）<br><span style="color:var(--primary);font-weight:600;">同时上传 STEP 01 的 A 表 + STEP 02 的 B 表：自动校正 OCR 编号，并将拆分 PDF 与归档文件夹(含 A 原文件)合并为同一个 ZIP</span></div>
+                <div class="step-desc">逐页 OCR 识别「合同编号 / 合同号码」，按编号拆分归档（可多选多个 PDF）<br><span style="color:var(--primary);font-weight:600;">同时上传 STEP 01 的 A 表 + STEP 02 的 B 表：自动校正 OCR 编号，并将拆分 PDF 与归档文件夹(含 A 原文件)合并为同一个 ZIP</span><br><span id="ocrEngineHint" style="color:#0ea5e9;font-weight:600;font-size:11px;">检测 OCR 引擎中…</span></div>
                 <label class="upload-btn-custom"><span>选择 PDF</span><input type="file" id="filePdf" accept=".pdf" multiple onchange="updatePdfName()"></label>
                 <div class="drag-hint">或将 PDF 拖入此区域</div>
                 <div class="file-name-display" id="namePdf">未上传文件</div>
@@ -915,7 +1059,156 @@
             updateFileName(inputId, displayId, boxId);
         }, false);
     }
-    window.addEventListener('DOMContentLoaded', () => { initDragAndDrop(); initPrankToggle(); loadDefaultTemplate(); });
+    window.addEventListener('DOMContentLoaded', () => { initDragAndDrop(); initPrankToggle(); loadDefaultTemplate(); detectOcrEngine(); initUpdater(); });
+
+    // 自动更新通知条：订阅主进程 autoUpdater 事件，按状态切换 UI
+    function initUpdater() {
+        const bar = document.getElementById('updBar');
+        const icon = document.getElementById('updIcon');
+        const msg = document.getElementById('updMsg');
+        const fill = document.getElementById('updProgressFill');
+        const installBtn = document.getElementById('updInstallBtn');
+        const closeBtn = document.getElementById('updCloseBtn');
+        const versionChip = document.getElementById('versionChip');
+        const checkBtn = document.getElementById('btnCheckUpdate');
+        const checkBtnText = document.getElementById('btnCheckUpdateText');
+        if (!bar) return;
+        const updater = window.feini && window.feini.updater;
+        // 浏览器模式（无 Electron）：版本徽章显示「Web 版」，更新按钮隐藏
+        if (!updater) {
+            if (versionChip) versionChip.textContent = '🌐 Web 版';
+            if (checkBtn) checkBtn.style.display = 'none';
+            return;
+        }
+
+        // 拉取并显示当前版本
+        updater.currentVersion().then(v => {
+            if (versionChip && v) versionChip.textContent = 'v' + v;
+        }).catch(() => {});
+
+        const show = () => bar.classList.add('show');
+        const hide = () => bar.classList.remove('show');
+        const setMode = (mode) => {
+            bar.classList.remove('downloading', 'ready');
+            if (mode) bar.classList.add(mode);
+        };
+        // 把"检查更新"按钮还原为可点击的初始态
+        const resetCheckBtn = () => {
+            if (!checkBtn) return;
+            checkBtn.disabled = false;
+            checkBtn.classList.remove('checking');
+            checkBtnText.textContent = '检查更新';
+        };
+
+        closeBtn.addEventListener('click', hide);
+        installBtn.addEventListener('click', () => {
+            installBtn.disabled = true;
+            msg.textContent = '正在重启安装，请稍候...';
+            updater.installNow();
+        });
+
+        // 手动检查更新
+        if (checkBtn) {
+            checkBtn.addEventListener('click', async () => {
+                checkBtn.disabled = true;
+                checkBtn.classList.add('checking');
+                checkBtnText.textContent = '检查中...';
+                try {
+                    const r = await updater.check();
+                    if (!r.ok) {
+                        // 开发态 / 网络错误：在通知条上提示
+                        icon.textContent = '⚠';
+                        msg.textContent = '检查更新失败：' + (r.error || '未知错误');
+                        setMode(null);
+                        show();
+                        setTimeout(hide, 3500);
+                        resetCheckBtn();
+                    }
+                    // 成功结果由 'available' / 'not-available' 事件接管
+                } catch (e) {
+                    icon.textContent = '⚠';
+                    msg.textContent = '检查更新失败：' + e.message;
+                    setMode(null);
+                    show();
+                    setTimeout(hide, 3500);
+                    resetCheckBtn();
+                }
+            });
+        }
+
+        updater.on('checking', () => {
+            console.log('[updater] 正在检查更新...');
+        });
+        updater.on('available', (info) => {
+            icon.textContent = '⬇️';
+            msg.textContent = `发现新版本 v${info.version}，正在自动下载...`;
+            setMode('downloading');
+            show();
+            resetCheckBtn();
+        });
+        updater.on('not-available', (info) => {
+            console.log('[updater] 已是最新版本');
+            // 若由"检查更新"按钮触发，给一个短提示
+            if (checkBtn && checkBtn.disabled) {
+                icon.textContent = '✓';
+                msg.textContent = `当前已是最新版本（v${(info && info.version) || ''}）`;
+                setMode(null);
+                show();
+                setTimeout(hide, 2500);
+                resetCheckBtn();
+            }
+        });
+        updater.on('progress', (p) => {
+            const pct = Math.round(p.percent || 0);
+            fill.style.width = pct + '%';
+            const speed = p.bytesPerSecond ? `${(p.bytesPerSecond / 1024 / 1024).toFixed(2)} MB/s` : '';
+            msg.textContent = `正在下载更新 ${pct}% ${speed}`;
+        });
+        updater.on('downloaded', (info) => {
+            icon.textContent = '✅';
+            msg.textContent = `v${info.version} 已下载完毕，重启即可应用更新`;
+            setMode('ready');
+            show();
+            resetCheckBtn();
+        });
+        updater.on('error', (err) => {
+            console.warn('[updater] 错误:', err.message);
+            // 不打扰用户：错误只在控制台提示。除非已经显示了进度条/正在手动检查，那就回退到隐藏状态。
+            if (bar.classList.contains('downloading') || (checkBtn && checkBtn.disabled)) {
+                icon.textContent = '⚠';
+                msg.textContent = '更新失败：' + (err.message || '未知错误');
+                setMode(null);
+                show();
+                setTimeout(hide, 3500);
+                resetCheckBtn();
+            }
+        });
+    }
+
+    // 探测 OCR 引擎并更新页面指示
+    async function detectOcrEngine() {
+        const hint = document.getElementById('ocrEngineHint');
+        if (!hint) return;
+        if (window.feini && window.feini.ocr) {
+            try {
+                const st = await window.feini.ocr.status();
+                if (st && st.ok) {
+                    const langs = (st.languages || []).join(' / ') || 'zh-Hans-CN';
+                    hint.innerHTML = `🚀 OCR 引擎：<b>Windows 系统 OCR</b>（${langs}） · 离线 · 速度快`;
+                    hint.style.color = '#059669';
+                    return;
+                }
+                hint.innerHTML = `⚠ Windows OCR 不可用：${st && st.error || '未知'}，将使用 tesseract.js`;
+                hint.style.color = '#f59e0b';
+            } catch (e) {
+                hint.innerHTML = `⚠ Windows OCR 探测失败：${e.message}`;
+                hint.style.color = '#f59e0b';
+            }
+        } else {
+            hint.innerHTML = '🌐 浏览器模式 · OCR 引擎：tesseract.js（首次需下载中文模型）';
+            hint.style.color = '#0ea5e9';
+        }
+    }
 
     // —— 默认模板：部署到线上服务后，自动从服务器拉取并默认选中 STEP 03 模板 ——
     // 路径相对当前页面；用户仍可手动上传覆盖。注意：需经 http(s) 访问（直接 file:// 打开会被浏览器拦截 fetch）。
@@ -926,6 +1219,23 @@
         const box = document.getElementById('boxC');
         try {
             display.innerText = '正在载入默认模板...';
+            // 优先：Electron 环境下用 IPC 读取打包资源；fallback：HTTP fetch
+            if (window.feini && window.feini.defaultTemplate) {
+                const r = await window.feini.defaultTemplate();
+                if (!r.ok) throw new Error(r.error || '默认模板读取失败');
+                const blob = new Blob([r.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                defaultTemplateFile = new File([blob], r.name, { type: blob.type });
+                const fileC = document.getElementById('fileC');
+                try {
+                    const dt = new DataTransfer();
+                    dt.items.add(defaultTemplateFile);
+                    fileC.files = dt.files;
+                } catch (e) { /* 忽略 */ }
+                box.classList.add('active');
+                display.innerText = '✓ 默认模板：' + r.name;
+                log('已自动载入默认模板 [' + r.name + ']（' + fmtBytes(blob.size) + '），可直接生成或手动上传覆盖', 'success');
+                return;
+            }
             const resp = await fetch(DEFAULT_TEMPLATE_URL, { cache: 'no-cache' });
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const blob = await resp.blob();
@@ -1513,14 +1823,22 @@
         updateFileName('filePdf', 'namePdf', 'boxPdf');
     }
 
-    // 从一段文本里抽取「合同编号 / 合同号码」后面的值
+    // 在指定文本里抽取「合同编号 / 合同号码」后面的值
     // 返回 { no, method, tries }：no=命中的编号(或null)，method=命中方式，tries=每一步尝试详情(用于调试)
     function extractContractNo(rawText) {
         const tries = [];
         if (!rawText) return { no: null, method: null, tries };
 
-        // 归一：全角冒号→半角、全角空格→半角，统一便于匹配
-        const text = String(rawText).replace(/：/g, ':').replace(/　/g, ' ');
+        // 归一：全角冒号→半角、全角空格→半角；
+        // 把 OCR 常把 "-" 误读成的"一/—/–/－" 等通通归一为 ASCII "-"，避免一处差异破坏整段匹配
+        const text = String(rawText)
+            .replace(/：/g, ':')
+            .replace(/　/g, ' ')
+            .replace(/[一二〇—–‒‐‑−－]/g, (m) => {
+                // "一" 单独保留为汉字数字"一"=1 在合法编号里几乎不存在，保险起见仅在它处于字母数字之间时换 "-"
+                // 这里统一全部转 "-"，正则的合法字符集会兜住误转
+                return '-';
+            });
         const lines = text.split(/\r?\n/);
 
         // 可能的标签写法（OCR 常把“合同编号”读断或读错，故多列几种）
@@ -1584,6 +1902,114 @@
         return String(name).replace(/[\\\/:*?"<>|\r\n]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80) || '未识别';
     }
 
+    // ===========================================================
+    // 空间锚定提取：利用 Windows OCR 返回的 words 坐标
+    // 思路：找到"合同号码/合同编号/合同号"等标签词，从它右侧紧邻的 words 顺序拼成编号字符串
+    //      —— 比正则在整段噪声文本里抠稳定得多，能直接屏蔽下方产品型号的干扰
+    // 入参：words = [{ text, x, y, w, h }, ...]
+    // 返回：{ no, method } 或 null
+    // ===========================================================
+    function extractByWordLayout(words) {
+        if (!words || !words.length) return null;
+        // 横线变体归一化（OCR 常把 - 读成 一/—/–）
+        const FIX = (s) => String(s).replace(/[一二〇—–‒‐‑−－]/g, '-');
+        // 单字标签判定：Windows OCR 习惯把"合同号码"切成 4 个单字 word
+        const isLabelChar = (txt) => {
+            const t = String(txt).replace(/\s+/g, '').replace(/[：:#]/g, '');
+            return /^[合同号码编]$/.test(t);
+        };
+        // 整词标签判定（部分扫描件会把"合同号码"识为整词）
+        const isWholeLabel = (txt) => {
+            const t = String(txt).replace(/\s+/g, '').replace(/[：:#]/g, '');
+            return /合同(号码|编号|号|编)/.test(t);
+        };
+        // 编号 token 判定：含字母或数字、且不全是中文、长度 1~24
+        const isNoToken = (txt) => {
+            const t = FIX(String(txt)).replace(/[:#]/g, '');
+            if (!t || t.length > 24) return false;
+            return /^[A-Za-z0-9\-\/_.]+$/.test(t);
+        };
+
+        // 1) 按行聚类（y 中心相近视为同一行；同行按 x 排序）
+        const rows = [];
+        const sorted = [...words].sort((a, b) => (a.y - b.y) || (a.x - b.x));
+        for (const w of sorted) {
+            const yc = w.y + w.h / 2;
+            let put = null;
+            for (const r of rows) {
+                if (Math.abs(r.yc - yc) < Math.max(r.h, w.h) * 0.6) { put = r; break; }
+            }
+            if (put) {
+                put.items.push(w);
+                put.yc = (put.yc * put.items.length + yc) / (put.items.length + 1);
+                put.h = Math.max(put.h, w.h);
+            } else {
+                rows.push({ yc, h: w.h, items: [w] });
+            }
+        }
+        for (const r of rows) r.items.sort((a, b) => a.x - b.x);
+
+        // 2) 在每一行里找标签（整词或连续单字），把它右侧紧邻的 words 收成"编号串"
+        for (const r of rows) {
+            for (let i = 0; i < r.items.length; i++) {
+                let labelEnd = -1;     // 标签结束位置（含），即编号搜索从 labelEnd+1 开始
+                if (isWholeLabel(r.items[i].text)) {
+                    labelEnd = i;
+                } else if (isLabelChar(r.items[i].text)) {
+                    // 连续吃 1~4 个标签单字
+                    let k = i;
+                    while (k < r.items.length && k - i < 4 && isLabelChar(r.items[k].text)) k++;
+                    if (k - i >= 2) labelEnd = k - 1;   // 至少 2 个连续标签字（如"合同/号码"）
+                }
+                if (labelEnd < 0) continue;
+
+                // 标签之后的"编号串"
+                const acc = [];
+                let prev = r.items[labelEnd];
+                for (let j = labelEnd + 1; j < r.items.length; j++) {
+                    const w = r.items[j];
+                    const gap = w.x - (prev.x + prev.w);
+                    const charWidth = Math.max(8, prev.w / Math.max(1, String(prev.text).length));
+                    if (gap > charWidth * 5) break;
+                    if (/[一-龥]{2,}/.test(String(w.text))) break;     // 遇到 ≥2 中文段，编号区结束
+                    if (isNoToken(w.text)) {
+                        acc.push(FIX(w.text).replace(/[:#]/g, ''));
+                        prev = w;
+                    } else if (acc.length === 0) {
+                        // 标签和编号之间可能夹一个冒号 word
+                        if (/^[:#]+$/.test(String(w.text).trim())) { prev = w; continue; }
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+                if (!acc.length) continue;
+                let candidate = acc.join('');
+                candidate = candidate.replace(/^[^A-Za-z0-9]+/, '').replace(/[^A-Za-z0-9]+$/, '');
+                const ok = (/[A-Za-z]/.test(candidate) && /\d{2,}/.test(candidate)) || candidate.length >= 5;
+                if (ok) {
+                    return { no: candidate, method: '空间锚定' };
+                }
+            }
+        }
+
+        // 3) 行级压空格回退：拿每一行（不再是整页）压成无空格串后跑标签正则
+        const VAL = '[A-Za-z0-9][A-Za-z0-9\\-\\/_.]{2,}';
+        const labels = ['合同编号', '合同号码', '合同号', '合同编', '编号', '合同'];
+        for (const r of rows) {
+            const lineText = r.items.map(w => FIX(w.text)).join('');
+            const compact = lineText.replace(/\s+/g, '').replace(/：/g, ':');
+            for (const lab of labels) {
+                const re = new RegExp(lab + '[:#]*(' + VAL + ')');
+                const m = compact.match(re);
+                if (m && m[1]) {
+                    return { no: m[1].replace(/[，。、；,.]+$/, ''), method: '行级压空格:' + lab };
+                }
+            }
+        }
+        return null;
+    }
+
     // ====== B 表权威校正 + 归档目录映射 ======
     // 读取 B 表：第1列=合同编号(归档分类键)，第2/3列与「导出归档文件夹」一致用于拼目录名
     // 返回 { noList(校正用), folderByNo(编号→归档目录名), validCount, rootName }
@@ -1617,8 +2043,13 @@
         return { noList, folderByNo, rows, validCount, rootName: `${dateStr} XD ${validCount}单` };
     }
 
-    // 归一化：转大写、去掉非字母数字（便于跨 OCR 噪声比较）
-    function normNo(s) { return String(s).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+    // 归一化：把横线变体统一为 "-"，再转大写，再去掉非字母数字（便于跨 OCR 噪声比较）
+    function normNo(s) {
+        return String(s)
+            .replace(/[一二〇—–‒‐‑−－]/g, '-')
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '');
+    }
 
     // 编辑距离（Levenshtein），用于衡量 OCR 串与标准编号的相似度
     function editDistance(a, b) {
@@ -1637,7 +2068,7 @@
     }
 
     // 把 OCR 串校正到 B 表里最接近的标准编号。
-    // 优先级：完全相同 → 尾号(末尾数字段)唯一匹配 → 编辑距离最小且足够接近
+    // 优先级：完全相同 → 字符相似度归一(O/0、I/1、l/1、S/5、B/8 互换) → 尾号唯一匹配 → 编辑距离最小且足够接近
     // 返回 { no, method } 或 null
     function correctByList(ocrNo, list) {
         if (!ocrNo || !list || !list.length) return null;
@@ -1647,7 +2078,16 @@
         // 1) 归一化后完全一致
         for (const std of list) if (normNo(std) === target) return { no: std, method: 'B表精确' };
 
-        // 2) 用 OCR 读对率最高的“尾号段”匹配（如 -05/-06）。取 OCR 串末尾的数字段
+        // 2) OCR 易混字符归一比较（O↔0、I/L↔1、S↔5、B↔8、Z↔2、G↔6）
+        // 扫描件 OCR 这几对极易互错，先做一遍"形似归一"再精确比较，能修掉大量误读
+        const fuzzNo = s => String(s).toUpperCase()
+            .replace(/[OQ]/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5')
+            .replace(/B/g, '8').replace(/Z/g, '2').replace(/G/g, '6')
+            .replace(/[^A-Z0-9]/g, '');
+        const targetFuzz = fuzzNo(ocrNo);
+        for (const std of list) if (fuzzNo(std) === targetFuzz) return { no: std, method: 'B表形似' };
+
+        // 3) 用 OCR 读对率最高的"尾号段"匹配（如 -05/-06）。取 OCR 串末尾的数字段
         const tailM = String(ocrNo).match(/(\d{1,4})\s*$/);
         if (tailM) {
             const tail = tailM[1].replace(/^0+(?=\d)/, ''); // 去前导0再比，兼容 05 vs 5
@@ -1667,7 +2107,7 @@
             }
         }
 
-        // 3) 全表编辑距离最小，且相似度足够高（差异不超过长度的 35%）才采信
+        // 4) 全表编辑距离最小，且相似度足够高（差异不超过长度的 35%）才采信
         let best = null, bestD = Infinity;
         for (const std of list) {
             const d = editDistance(target, normNo(std));
@@ -1734,34 +2174,78 @@
         return null;
     }
 
-    // 图像预处理：灰度 + Otsu 自适应阈值二值化，显著提升扫描件中文 OCR 准确率
-    function preprocessCanvas(canvas) {
+    // 图像预处理：灰度 + 对比拉伸 + Otsu 二值化 + 椒盐去噪
+    // mode: 'binary'(默认，黑白二值，适合标签/编号区) | 'gray'(灰度+对比拉伸，适合中文密集区)
+    function preprocessCanvas(canvas, mode) {
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const W = canvas.width, H = canvas.height;
+        const img = ctx.getImageData(0, 0, W, H);
         const d = img.data;
         const hist = new Array(256).fill(0);
         // 1) 转灰度并统计直方图
-        for (let i = 0; i < d.length; i += 4) {
+        const gray = new Uint8ClampedArray(W * H);
+        for (let i = 0, j = 0; i < d.length; i += 4, j++) {
             const g = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
-            d[i] = d[i + 1] = d[i + 2] = g;
+            gray[j] = g;
             hist[g]++;
         }
-        // 2) Otsu 求最优阈值（最大化类间方差）
-        const total = canvas.width * canvas.height;
-        let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
+        // 2) 对比度拉伸：截掉直方图低 2% / 高 2%，把中间映射到 0~255
+        // 扫描件常因纸张泛黄/光照不均导致动态范围被压扁，这一步显著提升后续阈值化稳定性
+        const total = W * H;
+        let cum = 0, lo = 0, hi = 255;
+        for (let t = 0; t < 256; t++) { cum += hist[t]; if (cum >= total * 0.02) { lo = t; break; } }
+        cum = 0;
+        for (let t = 255; t >= 0; t--) { cum += hist[t]; if (cum >= total * 0.02) { hi = t; break; } }
+        const range = Math.max(1, hi - lo);
+        for (let j = 0; j < gray.length; j++) {
+            const v = ((gray[j] - lo) * 255 / range) | 0;
+            gray[j] = v < 0 ? 0 : v > 255 ? 255 : v;
+        }
+        // 3) 灰度模式：直接写回（中文笔画细节保留更全，配合 Tesseract 自适应二值化使用）
+        if (mode === 'gray') {
+            for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+                d[i] = d[i + 1] = d[i + 2] = gray[j];
+            }
+            ctx.putImageData(img, 0, 0);
+            return null;
+        }
+        // 4) Otsu 求最优阈值（在拉伸后的灰度上重算直方图）
+        const hist2 = new Array(256).fill(0);
+        for (let j = 0; j < gray.length; j++) hist2[gray[j]]++;
+        let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist2[t];
         let sumB = 0, wB = 0, maxVar = -1, threshold = 127;
         for (let t = 0; t < 256; t++) {
-            wB += hist[t]; if (wB === 0) continue;
+            wB += hist2[t]; if (wB === 0) continue;
             const wF = total - wB; if (wF === 0) break;
-            sumB += t * hist[t];
+            sumB += t * hist2[t];
             const mB = sumB / wB, mF = (sum - sumB) / wF;
             const between = wB * wF * (mB - mF) * (mB - mF);
             if (between > maxVar) { maxVar = between; threshold = t; }
         }
-        // 3) 二值化（略微下调阈值，保留更多笔画细节）
-        const th = threshold * 0.92;
-        for (let i = 0; i < d.length; i += 4) {
-            const v = d[i] > th ? 255 : 0;
+        // 5) 二值化（略微下调阈值，保留更多笔画细节）
+        const th = threshold * 0.93;
+        const bin = new Uint8ClampedArray(W * H);
+        for (let j = 0; j < gray.length; j++) bin[j] = gray[j] > th ? 255 : 0;
+        // 6) 椒盐去噪：3x3 邻域少数服从多数，消除纸张细小噪点（仅翻转孤立黑点）
+        const out = new Uint8ClampedArray(W * H);
+        out.set(bin);
+        for (let y = 1; y < H - 1; y++) {
+            for (let x = 1; x < W - 1; x++) {
+                const idx = y * W + x;
+                if (bin[idx] === 0) continue;  // 仅修白底里的孤立黑点
+                let blackCnt = 0;
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        if (bin[(y + dy) * W + (x + dx)] === 0) blackCnt++;
+                    }
+                }
+                if (blackCnt <= 1) out[idx] = 255;  // 0~1 个黑邻居 → 视为噪点
+            }
+        }
+        // 7) 写回
+        for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+            const v = out[j];
             d[i] = d[i + 1] = d[i + 2] = v;
         }
         ctx.putImageData(img, 0, 0);
@@ -1782,10 +2266,112 @@
         setTimeout(() => { wrap.classList.remove('visible'); bar.style.width = '0%'; }, 800);
     }
 
+    // ==========================================
+    // 【OCR 适配层】
+    //   - Windows.Media.Ocr（Electron + Win10/11 自带，离线、中文好、~50-200ms/页）
+    //   - tesseract.js（浏览器/无 Electron 时兜底）
+    // 统一接口：
+    //   adapter.recognize(canvas, opts) -> { text, confidence, words }
+    //     opts: { whitelist?: string, singleLine?: boolean }
+    //     - Windows OCR 没有 PSM 概念，singleLine 仅为兼容字段（无影响）
+    //     - whitelist：识别完成后用于过滤候选字符（仅日志用，不影响 OCR 本身）
+    // ==========================================
+    async function initOcrAdapter(btnEl) {
+        const cores = navigator.hardwareConcurrency || 4;
+        // —— 路线 1：Windows.Media.Ocr（Electron 环境）——
+        if (window.feini && window.feini.ocr) {
+            try {
+                const st = await window.feini.ocr.status();
+                if (st && st.ok) {
+                    const langs = (st.languages || []).join(' / ') || 'zh-Hans-CN';
+                    log(`▶ 使用 Windows 系统 OCR（语言：${langs}），多页并发 ${Math.min(8, cores)} 路`, 'info');
+                    if (btnEl) btnEl.innerText = '识别中...';
+                    const POOL = Math.min(8, Math.max(2, cores));
+                    return {
+                        kind: 'win',
+                        label: 'Windows 系统 OCR',
+                        poolSize: POOL,
+                        // recognize: 把画布转 PNG 给主进程
+                        recognize: async (canvas /*, opts */) => {
+                            const blob = await new Promise(res => canvas.toBlob(b => res(b), 'image/png'));
+                            const buf = await blob.arrayBuffer();
+                            const r = await window.feini.ocr.recognizeBuffer(buf, { lang: 'zh-Hans-CN' });
+                            // Windows OCR 不返回 0~100 置信度；用文本长度+词数估一个相对值用于排序
+                            const wordCnt = (r.words || []).length;
+                            const charCnt = (r.text || '').length;
+                            const pseudoConf = Math.min(95, 50 + Math.min(40, wordCnt) + Math.min(5, charCnt / 50));
+                            return {
+                                text: r.text || '',
+                                confidence: pseudoConf,
+                                words: r.words || [],
+                                lines: r.lines || [],
+                                angle: r.angle || 0,
+                            };
+                        },
+                        terminate: async () => { /* PowerShell 守护进程由主进程统一管理 */ },
+                    };
+                }
+                log(`Windows OCR 不可用：${st && st.error || '未知原因'}，将退回 tesseract.js`, 'warning');
+            } catch (e) {
+                log(`Windows OCR 初始化异常：${e.message}，将退回 tesseract.js`, 'warning');
+            }
+        }
+        // —— 路线 2：tesseract.js 兜底（旧版纯网页用法）——
+        if (!window.Tesseract) throw new Error('tesseract.js 未加载，无法启动 OCR');
+        log('▶ 使用 tesseract.js（浏览器内 OCR），首次会下载中文模型', 'info');
+        const POOL = Math.min(4, Math.max(2, Math.floor(cores / 2)));
+        const createOne = (showLoad) => Tesseract.createWorker(['chi_sim', 'eng'], 1, {
+            logger: showLoad ? (m => {
+                if (m.status !== 'recognizing text' && typeof m.progress === 'number' && m.progress < 1) {
+                    if (btnEl) btnEl.innerText = `加载模型 ${Math.round(m.progress * 100)}%`;
+                }
+            }) : undefined,
+        });
+        const workers = [];
+        workers.push(await createOne(true));
+        if (POOL > 1) {
+            const rest = await Promise.all(Array.from({ length: POOL - 1 }, () => createOne(false)));
+            workers.push(...rest);
+        }
+        // 每个 worker 一个忙闲位
+        const busy = new WeakMap();
+        return {
+            kind: 'tesseract',
+            label: 'tesseract.js',
+            poolSize: POOL,
+            workers,
+            recognize: async (canvas, opts) => {
+                // 简单选一个空闲 worker（顺序回环也行，毕竟外层有自己的并发控制）
+                const w = workers[(opts && opts._workerIndex) || 0] || workers[0];
+                const params = {};
+                if (opts && opts.singleLine) params.tessedit_pageseg_mode = '7';
+                if (opts && opts.psm) params.tessedit_pageseg_mode = String(opts.psm);
+                if (opts && opts.whitelist) params.tessedit_char_whitelist = opts.whitelist;
+                if (Object.keys(params).length) await w.setParameters(params);
+                try {
+                    const { data } = await w.recognize(canvas);
+                    return {
+                        text: data.text || '',
+                        confidence: data.confidence || 0,
+                        words: data.words || [],
+                    };
+                } finally {
+                    if (Object.keys(params).length) {
+                        try { await w.setParameters({ tessedit_pageseg_mode: '3', tessedit_char_whitelist: '' }); }
+                        catch (_) {}
+                    }
+                }
+            },
+            terminate: async () => {
+                await Promise.all(workers.map(w => w.terminate().catch(() => {})));
+            },
+        };
+    }
+
     async function startPdfSplit() {
         const filePdfInput = document.getElementById('filePdf');
         if (!filePdfInput.files.length) { alert('请先选择需要识别拆分的 PDF 文件！'); return; }
-        if (!window['pdfjsLib'] || !window['PDFLib'] || !window['Tesseract']) {
+        if (!window['pdfjsLib'] || !window['PDFLib']) {
             alert('PDF 处理库未加载完成，请检查网络后刷新页面重试。'); return;
         }
 
@@ -1803,33 +2389,16 @@
         const tAll = performance.now();
         logSection('PDF 识别拆分流程启动');
         log(`待处理 PDF ${filePdfInput.files.length} 个：${Array.from(filePdfInput.files).map(f => `${f.name}(${fmtBytes(f.size)})`).join('、')}`, 'info');
-        log('▶ PDF 模块启动，初始化 OCR 引擎（中文+英文）...', 'info');
 
-        let workers = [];
+        let ocrAdapter = null;       // 统一的 OCR 适配器：{ kind, recognize(canvas, opts), terminate(), poolSize }
+        let workers = [];             // 仅 tesseract 兜底时使用
         const btnTextPdfEl = document.getElementById('btnTextPdf');
         try {
-            // —— OCR 线程池：开多个 Tesseract worker（各自跑在独立 Web Worker 线程），多页并行识别 ——
-            const tPool = performance.now();
-            const cores = navigator.hardwareConcurrency || 4;
-            const POOL_SIZE = Math.min(4, Math.max(2, Math.floor(cores / 2)));
-            log(`▶ 准备 ${POOL_SIZE} 个 OCR 线程（检测到 ${cores} 核 CPU）...`, 'info');
-
-            const createOneWorker = (showLoad) => Tesseract.createWorker(['chi_sim', 'eng'], 1, {
-                logger: showLoad ? (m => {
-                    if (m.status !== 'recognizing text' && typeof m.progress === 'number' && m.progress < 1) {
-                        btnTextPdfEl.innerText = `加载模型 ${Math.round(m.progress * 100)}%`;
-                    }
-                }) : undefined
-            });
-
-            // 先建第 1 个 worker：触发中文模型下载并写入浏览器缓存
-            workers.push(await createOneWorker(true));
-            // 其余 worker 并行创建：直接命中缓存，几乎瞬时
-            if (POOL_SIZE > 1) {
-                const rest = await Promise.all(Array.from({ length: POOL_SIZE - 1 }, () => createOneWorker(false)));
-                workers.push(...rest);
-            }
-            log(`✓ ${workers.length} 个 OCR 线程就绪（初始化耗时 ${fmtMs(performance.now() - tPool)}），开始并行解析...`, 'success');
+            // —— OCR 引擎选择：优先 Windows.Media.Ocr（Electron 环境），否则退回 tesseract.js ——
+            const tInit = performance.now();
+            ocrAdapter = await initOcrAdapter(btnTextPdfEl);
+            workers = ocrAdapter.workers || [];
+            log(`✓ ${ocrAdapter.label} 就绪（${ocrAdapter.poolSize} 并行 / 初始化耗时 ${fmtMs(performance.now() - tInit)}）`, 'success');
 
             const zip = new JSZip();
             const today = new Date();
@@ -1897,8 +2466,8 @@
             const results = new Array(tasks.length);   // 与 tasks 一一对应：{ contractNo, fromTextLayer }
             let processed = 0, recognized = 0;
 
-            // 单页识别：文本层快速路径 → 否则渲染后用指定 worker 做 OCR
-            async function recognizePage(task, ocrWorker) {
+            // 单页识别：文本层快速路径 → 否则渲染后通过 OCR 适配器多区域多旋转投票
+            async function recognizePage(task, ocrAdapter, workerHint) {
                 const tPage = performance.now();
                 const { pdfjsDoc } = pdfDocs[task.docIndex];
                 const page = await pdfjsDoc.getPage(task.pageNum);
@@ -1922,10 +2491,12 @@
                 } catch (e) { console.warn(`${tag} 读取文本层异常:`, e.message); }
 
                 let ocrRawText = '';
+                // 候选编号池：多个区域 / 多个旋转角度各自给候选，最后投票或交给 B 表锚定
+                const candidates = []; // { no, source, conf, raw, method }
                 if (!contractNo) {
-                    // 中文 OCR 对字高极敏感：用高分辨率 3x，最大边长放宽到 3500px
+                    // 渲染基准：高分辨率 3x，最大边长 3500px（Windows OCR 对高分辨率非常友好）
                     let viewport = page.getViewport({ scale: 1 });
-                    const pw1 = viewport.width, ph1 = viewport.height;   // 原始(scale=1)页面尺寸
+                    const pw1 = viewport.width, ph1 = viewport.height;
                     const targetScale = 3.0, MAX_SIDE = 3500;
                     let scale = targetScale;
                     const longSide = Math.max(pw1, ph1) * targetScale;
@@ -1933,43 +2504,171 @@
                     viewport = page.getViewport({ scale });
                     const fullW = Math.ceil(viewport.width), fullH = Math.ceil(viewport.height);
 
-                    // OCR 指定区域；cropW1/cropH1 为 scale=1 尺寸，传 null 表示整页
-                    const ocrRegion = async (cropW1, cropH1, label) => {
-                        const isFull = cropW1 == null || cropH1 == null;
-                        const cw = isFull ? fullW : Math.ceil(Math.min(pw1, cropW1) * scale);
-                        const ch = isFull ? fullH : Math.ceil(Math.min(ph1, cropH1) * scale);
-                        const canvas = document.createElement('canvas');
-                        canvas.width = cw; canvas.height = ch;
-                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);
-                        const rvp = isFull ? viewport : page.getViewport({ scale, offsetX: -(fullW - cw), offsetY: 0 });
-                        await page.render({ canvasContext: ctx, viewport: rvp }).promise;
-                        console.log(`${tag} [${label}] 渲染尺寸: ${cw}x${ch} (scale=${scale.toFixed(2)}${isFull ? '' : `, 右上角裁剪`})`);
-                        try { const th = preprocessCanvas(canvas); console.log(`${tag} [${label}] 二值化阈值(Otsu): ${th}`); }
-                        catch (e) { console.warn(`${tag} [${label}] 预处理跳过:`, e.message); }
-                        let hit = null;
-                        try {
-                            const { data } = await ocrWorker.recognize(canvas);
-                            ocrConf = data.confidence;
-                            const ocrText = data.text || '';
-                            if (isFull) ocrRawText = ocrText;   // 整页文本供 B 表锚定
-                            console.log(`${tag} [${label}] OCR 置信度: ${ocrConf}, 字符数: ${ocrText.length}`);
-                            console.log(`${tag} [${label}] OCR 原始文本:\n`, ocrText);
-                            const r = extractContractNo(ocrText);
-                            console.log(`${tag} [${label}] OCR 匹配尝试:`, r.tries);
-                            if (r.no) { hit = r.no; console.log(`%c${tag} ✓ [${label}] OCR命中 [${r.no}] via ${r.method}`, 'color:#059669'); }
-                        } catch (e) {
-                            log(`第 ${task.pageNum} 页 OCR 异常：${e.message}`, 'warning');
-                            console.error(`${tag} [${label}] OCR 异常:`, e);
+                    // 渲染指定区域到画布。cropRect: { x, y, w, h }（scale=1 坐标），传 null = 整页
+                    // rotate: 0/90/180/270，绕画布中心旋转后再 OCR（应对扫描件方向错误）
+                    // preMode: 'binary' / 'gray' / 'raw'(不做预处理，让 Windows OCR 自己处理彩色原图)
+                    // scaleOverride: 覆盖 scale，便于多分辨率投票
+                    const renderRegion = async (cropRect, preMode, rotate, scaleOverride) => {
+                        const useScale = scaleOverride || scale;
+                        const _vp = scaleOverride
+                            ? page.getViewport({ scale: scaleOverride })
+                            : viewport;
+                        const _fullW = Math.ceil(_vp.width), _fullH = Math.ceil(_vp.height);
+                        const isFull = !cropRect;
+                        const cw0 = isFull ? _fullW : Math.max(8, Math.ceil(cropRect.w * useScale));
+                        const ch0 = isFull ? _fullH : Math.max(8, Math.ceil(cropRect.h * useScale));
+                        const baseCanvas = document.createElement('canvas');
+                        baseCanvas.width = cw0; baseCanvas.height = ch0;
+                        const baseCtx = baseCanvas.getContext('2d', { willReadFrequently: true });
+                        baseCtx.fillStyle = '#fff'; baseCtx.fillRect(0, 0, cw0, ch0);
+                        const rvp = isFull
+                            ? _vp
+                            : page.getViewport({ scale: useScale, offsetX: -Math.floor(cropRect.x * useScale), offsetY: -Math.floor(cropRect.y * useScale) });
+                        await page.render({ canvasContext: baseCtx, viewport: rvp }).promise;
+                        if (preMode && preMode !== 'raw') {
+                            try { preprocessCanvas(baseCanvas, preMode); }
+                            catch (e) { console.warn(`${tag} 预处理跳过:`, e.message); }
                         }
-                        canvas.width = 0; canvas.height = 0;   // 释放画布内存
-                        return hit;
+                        if (!rotate) return baseCanvas;
+                        // 旋转后画到新画布
+                        const rad = rotate * Math.PI / 180;
+                        const sin = Math.abs(Math.sin(rad)), cos = Math.abs(Math.cos(rad));
+                        const cw = Math.ceil(cw0 * cos + ch0 * sin);
+                        const ch = Math.ceil(cw0 * sin + ch0 * cos);
+                        const rot = document.createElement('canvas');
+                        rot.width = cw; rot.height = ch;
+                        const rctx = rot.getContext('2d');
+                        rctx.fillStyle = '#fff'; rctx.fillRect(0, 0, cw, ch);
+                        rctx.translate(cw / 2, ch / 2);
+                        rctx.rotate(rad);
+                        rctx.drawImage(baseCanvas, -cw0 / 2, -ch0 / 2);
+                        baseCanvas.width = 0; baseCanvas.height = 0;
+                        return rot;
                     };
 
-                    // 整页识别：扫描合同的「合同号码」位置随排版变化、且常被 OCR 打碎，
-                    // 整页识别 + 下方 B 表锚定，比裁剪小区域更稳（实测准确率显著回升）。
-                    contractNo = await ocrRegion(null, null, '整页');
-                    if (!contractNo) console.warn(`${tag} ✗ 正则未直接命中，待 B 表锚定`);
+                    // 在画布上跑一次 OCR，命中则塞入候选池
+                    const doOcr = async (canvas, label, ocrOpts) => {
+                        try {
+                            const result = await ocrAdapter.recognize(canvas, Object.assign({ _workerIndex: workerHint }, ocrOpts || {}));
+                            const conf = result.confidence || 0;
+                            const text = result.text || '';
+                            const words = result.words || [];
+                            console.log(`${tag} [${label}] OCR conf=${typeof conf === 'number' ? conf.toFixed(1) : conf}, len=${text.length}, words=${words.length}`);
+                            console.log(`${tag} [${label}] OCR 文本:\n`, text);
+
+                            // 优先：空间锚定（用 word 坐标找标签右侧的编号，最稳）
+                            if (words.length) {
+                                const sp = extractByWordLayout(words);
+                                if (sp && sp.no) {
+                                    candidates.push({ no: sp.no, source: label + '·' + sp.method, conf, raw: text, method: sp.method });
+                                    console.log(`%c${tag} ✓ [${label}] 空间锚定命中 [${sp.no}] via ${sp.method}`, 'color:#059669;font-weight:bold');
+                                    return { conf, text, words };
+                                }
+                            }
+                            // 退化：在 OCR 全文上跑正则
+                            const r = extractContractNo(text);
+                            console.log(`${tag} [${label}] 正则匹配尝试:`, r.tries);
+                            if (r.no) {
+                                candidates.push({ no: r.no, source: label, conf, raw: text, method: r.method });
+                                console.log(`%c${tag} ✓ [${label}] 正则命中 [${r.no}] via ${r.method} conf=${conf}`, 'color:#059669');
+                            }
+                            return { conf, text, words };
+                        } catch (e) {
+                            console.error(`${tag} [${label}] OCR 异常:`, e);
+                            return { conf: 0, text: '', words: [] };
+                        } finally {
+                            canvas.width = 0; canvas.height = 0;  // 释放画布
+                        }
+                    };
+
+                    // === 策略1：整页彩色原图（不做预处理，让 Windows OCR 自适应处理）===
+                    // Windows OCR 自带强大的自适应二值化与方向估计，原图往往比我们手工预处理更稳
+                    {
+                        const c = await renderRegion(null, 'raw');
+                        const r = await doOcr(c, '整页-原图');
+                        if (!ocrRawText || r.text.length > ocrRawText.length) ocrRawText = r.text;
+                    }
+
+                    // === 策略2：右上角原图（合同号常出现位置）4× 高分辨率，给小字号扫描件更多笔画信息 ===
+                    {
+                        const cropW = pw1 * 0.55, cropH = ph1 * 0.22;
+                        const cropX = pw1 - cropW, cropY = 0;
+                        const hiScale = Math.min(4.0, MAX_SIDE / Math.max(cropW, cropH));
+                        const c = await renderRegion({ x: cropX, y: cropY, w: cropW, h: cropH }, 'raw', 0, hiScale);
+                        await doOcr(c, '右上角-原图4x');
+                    }
+
+                    // === 策略3：顶部整条带 + 二值化（应对扫描件背景污渍） ===
+                    {
+                        const cropW = pw1, cropH = ph1 * 0.25;
+                        const c = await renderRegion({ x: 0, y: 0, w: cropW, h: cropH }, 'binary');
+                        await doOcr(c, '顶部条带-二值');
+                    }
+
+                    // === 策略4：顶部条带灰度模式（部分扫描件二值化丢笔画，灰度更稳）===
+                    {
+                        const cropW = pw1, cropH = ph1 * 0.25;
+                        const c = await renderRegion({ x: 0, y: 0, w: cropW, h: cropH }, 'gray');
+                        await doOcr(c, '顶部条带-灰度');
+                    }
+
+                    // === 策略5：方向兜底——若以上 4 策略未给出候选，尝试旋转 90/180/270 度 ===
+                    if (candidates.length === 0) {
+                        for (const rot of [90, 180, 270]) {
+                            const c = await renderRegion(null, 'raw', rot);
+                            const r = await doOcr(c, `整页-旋转${rot}°`);
+                            if (r.text && r.text.length > ocrRawText.length) ocrRawText = r.text;
+                            if (candidates.length) break;
+                        }
+                    }
+
+                    // === 候选投票：归一化后哪个值出现次数最多就用哪个；并列则取置信度最高的 ===
+                    if (candidates.length) {
+                        // "空间锚定" 来源的候选权重 ×3（坐标命中比正则匹配可信度高得多）
+                        const weightOf = (c) => (c.source && c.source.indexOf('空间锚定') >= 0) ? 3 : 1;
+                        const tally = {};
+                        for (const c of candidates) {
+                            const k = normNo(c.no);
+                            if (!tally[k]) tally[k] = { count: 0, weight: 0, bestConf: 0, sample: c.no, anchored: false };
+                            tally[k].count++;
+                            tally[k].weight += weightOf(c);
+                            tally[k].bestConf = Math.max(tally[k].bestConf, c.conf || 0);
+                            if (weightOf(c) > 1) tally[k].anchored = true;
+                        }
+                        // 若提供了 B 表，候选先经 correctByList 校正后再投票
+                        if (bNoList && bNoList.length) {
+                            const tally2 = {};
+                            for (const c of candidates) {
+                                const fix = correctByList(c.no, bNoList);
+                                const final = fix ? fix.no : c.no;
+                                const k = normNo(final);
+                                if (!tally2[k]) tally2[k] = { count: 0, weight: 0, bestConf: 0, sample: final, fixed: !!fix, anchored: false };
+                                tally2[k].count++;
+                                tally2[k].weight += weightOf(c);
+                                tally2[k].bestConf = Math.max(tally2[k].bestConf, c.conf || 0);
+                                if (weightOf(c) > 1) tally2[k].anchored = true;
+                            }
+                            const ranked2 = Object.values(tally2).sort((a, b) =>
+                                (b.weight - a.weight) || (b.count - a.count) || (b.bestConf - a.bestConf));
+                            console.log(`${tag} 候选(B表归一)投票:`, ranked2.map(r => ({ no: r.sample, count: r.count, weight: r.weight, anchored: r.anchored })));
+                            // 空间锚定 + 在 B 表中能找到 → 1 票即采信；否则要 2 票以上
+                            if (ranked2[0] && (ranked2[0].weight >= 3 || ranked2[0].count >= 2)) {
+                                contractNo = ranked2[0].sample;
+                                ocrConf = ranked2[0].bestConf;
+                                console.log(`%c${tag} ★ B表归一投票胜出 [${contractNo}]（${ranked2[0].count} 票，weight=${ranked2[0].weight}）`, 'color:#7c3aed;font-weight:bold');
+                            }
+                        }
+                        if (!contractNo) {
+                            const ranked = Object.values(tally).sort((a, b) =>
+                                (b.weight - a.weight) || (b.count - a.count) || (b.bestConf - a.bestConf));
+                            contractNo = ranked[0].sample;
+                            ocrConf = ranked[0].bestConf;
+                            console.log(`${tag} 候选(原始)投票:`, ranked.map(r => ({ no: r.sample, count: r.count, weight: r.weight, anchored: r.anchored })));
+                            console.log(`%c${tag} ★ 原始投票胜出 [${contractNo}]（${ranked[0].count} 票，weight=${ranked[0].weight}）`, 'color:#7c3aed;font-weight:bold');
+                        }
+                    } else {
+                        console.warn(`${tag} ✗ 多策略均未直接命中编号，等待 B 表锚定兜底`);
+                    }
                 }
 
                 // 记录 B 表校正前的原始识别值，用于日志/文件名显示「OCR原值」
@@ -2012,16 +2711,16 @@
                 return { contractNo, rawNo, corrected, fromTextLayer, ocrConf, resolveVia, tMs: performance.now() - tPage };
             }
 
-            // —— 阶段一：线程池并行识别 ——
-            // 用共享游标当任务队列，每个 worker 拿一个空闲任务做，做完再取下一个，天然负载均衡
-            logSection(`并行 OCR 识别（${workers.length} 线程 / ${totalPages} 页）`);
+            // —— 阶段一：并行识别 ——
+            // 并发度 = ocrAdapter.poolSize；用共享游标当任务队列，做完再取下一个，天然负载均衡
+            logSection(`并行 OCR 识别（${ocrAdapter.poolSize} 路并发 / ${totalPages} 页）`);
             const tRecog = performance.now();
             let cursor = 0;
-            async function workerLoop(ocrWorker) {
+            async function workerLoop(workerIdx) {
                 while (true) {
                     const myIndex = cursor++;
                     if (myIndex >= tasks.length) break;
-                    const r = await recognizePage(tasks[myIndex], ocrWorker);
+                    const r = await recognizePage(tasks[myIndex], ocrAdapter, workerIdx);
                     results[myIndex] = r;
                     processed++;
                     setPdfProgress(Math.round(processed / totalPages * 100), false);
@@ -2039,7 +2738,8 @@
                     }
                 }
             }
-            await Promise.all(workers.map(w => workerLoop(w)));
+            // 启 N 路并发循环
+            await Promise.all(Array.from({ length: ocrAdapter.poolSize }, (_, i) => workerLoop(i)));
             const recogMs = performance.now() - tRecog;
             log(`识别阶段完成：${totalPages} 页耗时 ${fmtMs(recogMs)}，平均 ${fmtMs(recogMs / Math.max(1, totalPages))}/页`, 'info');
 
@@ -2117,8 +2817,8 @@
         } catch (error) {
             log(`❌ PDF 拆分失败：${error.message}`, 'error');
         } finally {
-            // 关闭线程池所有 OCR worker，释放线程与内存
-            await Promise.all(workers.map(w => w.terminate().catch(() => {})));
+            // 关闭 OCR 适配器（tesseract 兜底时会回收 worker；Windows OCR 由主进程统一管理）
+            try { if (ocrAdapter) await ocrAdapter.terminate(); } catch (_) {}
             btnPdf.disabled = false; btnGen.disabled = false; btnExp.disabled = false;
             spinnerPdf.style.display = 'none'; btnTextPdf.innerText = '🔍 识别并拆分 PDF';
             resetPdfProgress();
