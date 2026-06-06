@@ -2828,7 +2828,7 @@
             log(`识别阶段完成：${totalPages} 页耗时 ${fmtMs(recogMs)}，平均 ${fmtMs(recogMs / Math.max(1, totalPages))}/页`, 'info');
 
             // —— 阶段二：串行拆页 + 打包（pdf-lib 复制原页，保留扫描件原始质量）——
-            logSection('拆分单页并归档打包');g
+            logSection('拆分单页并归档打包');
             const tSplit = performance.now();
             const SUFFIX = '双签';        // 文件名固定后缀
             const usedNames = {};         // 处理同编号重名
