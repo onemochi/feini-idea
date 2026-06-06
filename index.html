@@ -646,8 +646,6 @@
             animation: dateFlash 1.4s ease-out;
         }
 
-        /*FX_CSS_TODO*/
-
         /* 标题指针态（保留轻量交互，无脚本副作用） */
         .header h1 { cursor: default; user-select: none; }
 
@@ -1831,14 +1829,21 @@
 
         // 归一：全角冒号→半角、全角空格→半角；
         // 把 OCR 常把 "-" 误读成的"一/—/–/－" 等通通归一为 ASCII "-"，避免一处差异破坏整段匹配
-        const text = String(rawText)
+        let text = String(rawText)
             .replace(/：/g, ':')
             .replace(/　/g, ' ')
-            .replace(/[一二〇—–‒‐‑−－]/g, (m) => {
+            .replace(/[一二〇—–‒‐‑−－~～·・•]/g, (m) => {
                 // "一" 单独保留为汉字数字"一"=1 在合法编号里几乎不存在，保险起见仅在它处于字母数字之间时换 "-"
                 // 这里统一全部转 "-"，正则的合法字符集会兜住误转
                 return '-';
             });
+
+        // 关键修复：跨行连字符续接
+        // Windows.Media.Ocr 倾向把 "GYCG-HF26010-19" 拆成两个视觉行 → 文本变成 "GYCG\n-HF26010-19"，
+        // 导致策略 1 只能匹配到短前缀 "GYCG"。这里把"行末字母数字 + 换行 + -/开头"和
+        // "行末-/ + 换行 + 字母数字开头"两类断行合并回去（中文段落几乎不命中此规则，安全）
+        text = text.replace(/([A-Za-z0-9])[ \t ]*\r?\n[ \t ]*(?=[\-\/])/g, '$1');
+        text = text.replace(/([\-\/])[ \t ]*\r?\n[ \t ]*(?=[A-Za-z0-9])/g, '$1');
         const lines = text.split(/\r?\n/);
 
         // 可能的标签写法（OCR 常把“合同编号”读断或读错，故多列几种）
@@ -1847,6 +1852,11 @@
         const VAL = '[A-Za-z0-9][A-Za-z0-9\\-\\/_.．]{2,}';
         const clean = v => v.replace(/[．.]/g, '.').replace(/[，。、；,.]+$/, '');
 
+        // 收集所有策略的候选，最终按可信度+完整度评分挑最优
+        // 注意：旧实现是"前一个策略命中即立返"，会被短前缀（如 GYCG）误锁定；
+        // 改成全策略收集后，策略 4 在保留空白的原文中抓到的完整 GYCG-HF26010-19 能胜出
+        const candidates = []; // { no, method }
+
         // 策略1：逐行匹配（标签与值在同一行，去掉行内空格后匹配）
         for (const line of lines) {
             const compact = line.replace(/\s+/g, '');
@@ -1854,8 +1864,9 @@
                 const re = new RegExp(lab + '[:#]*(' + VAL + ')', 'i');
                 const m = compact.match(re);
                 if (m && m[1]) {
+                    candidates.push({ no: clean(m[1]), method: 'line:' + lab });
                     tries.push({ strategy: 'line', label: lab, line: compact, hit: m[1] });
-                    return { no: clean(m[1]), method: 'line:' + lab, tries };
+                    break;
                 }
             }
         }
@@ -1865,8 +1876,9 @@
             const re = new RegExp(lab + '[:#]*(' + VAL + ')', 'i');
             const m = allCompact.match(re);
             if (m && m[1]) {
+                candidates.push({ no: clean(m[1]), method: 'compact:' + lab });
                 tries.push({ strategy: 'compact', label: lab, hit: m[1] });
-                return { no: clean(m[1]), method: 'compact:' + lab, tries };
+                break;
             }
         }
         // 策略3：模糊匹配——OCR 可能把“编号/号码”认错，只要出现“合同”后面隔几个字内跟着冒号+值即可
@@ -1875,26 +1887,76 @@
             // 合同 + 最多4个任意字 + 可选冒号/井号 + 取值
             const m = compact.match(new RegExp('合[同问回]?.{0,4}[:#]\\s*(' + VAL + ')'));
             if (m && m[1]) {
+                candidates.push({ no: clean(m[1]), method: 'fuzzy:合同' });
                 tries.push({ strategy: 'fuzzy-合同', line: compact, hit: m[1] });
-                return { no: clean(m[1]), method: 'fuzzy:合同', tries };
+                break;
             }
         }
         // 策略4：编号常见格式兜底（形如 GYCG-HF26010-07 / XD-2024-001 / HT2024001：
         // 由「字母数字段」用 - 或 / 连接，可能多段，需整体抓取）
-        // 注意：在「保留空白的原文」上匹配——空白天然作为分词边界（正则字符类不含空白，
-        // 遇空白即断开），避免把相邻噪声词（如 OCR 误读出的 ARSH）粘到真实编号前面。
+        // 关键：优先选"靠近合同/编号/号码标签"的候选——否则会误抓页面底部的产品型号
+        // （比如 Realtek 网卡 RTL8821CE-VC-CG 这种长字母数字串很容易压过真实合同号）
         let cands = (text.match(/[A-Za-z0-9]+(?:[-\/][A-Za-z0-9]+)*/g) || []);
         // 过滤：必须同时含字母与至少4位连续数字（排除纯数字电话/日期、纯字母词如 ARSH）
         cands = cands.filter(s => /[A-Za-z]/.test(s) && /\d{4,}/.test(s));
         if (cands.length) {
-            // 合同编号通常是页面上最长的字母数字编码，取最长者
-            cands.sort((a, b) => b.length - a.length);
-            tries.push({ strategy: 'pattern', hit: cands[0], all: cands });
-            return { no: clean(cands[0]), method: 'pattern', tries };
+            // 找标签在压平文本里的位置（取最靠前的那个）
+            let labelIdx = -1;
+            for (const lab of LABELS) {
+                const i = allCompact.toLowerCase().indexOf(lab.toLowerCase());
+                if (i >= 0 && (labelIdx < 0 || i < labelIdx)) labelIdx = i;
+            }
+            let pick = null;
+            let nearLabel = false;
+            if (labelIdx >= 0) {
+                // 计算每个候选在 allCompact 中"标签之后"的距离，选最近的
+                const withPos = cands.map(s => ({
+                    s,
+                    idx: allCompact.indexOf(s.replace(/\s+/g, '')),
+                }));
+                // 仅看在标签之后、且距离不超过 60 字符的候选（合同号通常紧跟标签）
+                const after = withPos.filter(x => x.idx > labelIdx && x.idx - labelIdx < 60);
+                if (after.length) {
+                    after.sort((a, b) => (a.idx - labelIdx) - (b.idx - labelIdx));
+                    pick = after[0].s;
+                    nearLabel = true;
+                }
+            }
+            if (!pick) {
+                cands.sort((a, b) => b.length - a.length);
+                pick = cands[0];
+            }
+            // 区分 pattern-near-label（高可信，靠近标签）与 pattern（弱兜底，可能是页面别处的型号）
+            candidates.push({ no: clean(pick), method: nearLabel ? 'pattern-near-label' : 'pattern' });
+            tries.push({ strategy: 'pattern', hit: pick, all: cands, labelIdx, nearLabel });
         }
-        // 都没命中：记录尝试过的标签，便于调试
-        tries.push({ strategy: 'none', testedLabels: LABELS, textLen: text.length });
-        return { no: null, method: null, tries };
+
+        if (!candidates.length) {
+            tries.push({ strategy: 'none', testedLabels: LABELS, textLen: text.length });
+            return { no: null, method: null, tries };
+        }
+
+        // 评分：(1) 标签命中给基础可信度（line > compact > fuzzy > pattern-near-label > pattern）
+        //       (2) 含字母+至少4位数字 给"像合同号"加分
+        //       (3) 长度与分隔符段数加分（解决 GYCG 被短前缀截断 vs 完整 GYCG-HF26010-19 的取舍）
+        const score = (cand) => {
+            const no = cand.no;
+            const hasLetter = /[A-Za-z]/.test(no);
+            const digitCnt = (no.match(/\d/g) || []).length;
+            const segCnt = (no.match(/[\-\/]/g) || []).length;
+            const strong = hasLetter && digitCnt >= 4 ? 60 : 0;
+            const labelBonus = cand.method.indexOf('line:') === 0 ? 40
+                : cand.method.indexOf('compact:') === 0 ? 25
+                : cand.method.indexOf('fuzzy') === 0 ? 15
+                : cand.method === 'pattern-near-label' ? 10
+                : cand.method === 'pattern' ? -20    // 无标签上下文的 pattern 给负分，避免压过弱标签命中
+                : 0;
+            return strong + labelBonus + no.length * 3 + segCnt * 6;
+        };
+        candidates.sort((a, b) => score(b) - score(a));
+        const best = candidates[0];
+        tries.push({ strategy: 'rank', picked: best, all: candidates.map(c => ({ no: c.no, method: c.method, score: score(c) })) });
+        return { no: best.no, method: best.method, tries };
     }
 
     // 文件名安全化（去掉非法字符，避免 ZIP 内路径出错）
@@ -1911,8 +1973,8 @@
     // ===========================================================
     function extractByWordLayout(words) {
         if (!words || !words.length) return null;
-        // 横线变体归一化（OCR 常把 - 读成 一/—/–）
-        const FIX = (s) => String(s).replace(/[一二〇—–‒‐‑−－]/g, '-');
+        // 横线变体归一化（OCR 常把 - 读成 一/—/–，增加点和波浪号容错）
+        const FIX = (s) => String(s).replace(/[一二〇—–‒‐‑−－~～·・•]/g, '-');
         // 单字标签判定：Windows OCR 习惯把"合同号码"切成 4 个单字 word
         const isLabelChar = (txt) => {
             const t = String(txt).replace(/\s+/g, '').replace(/[：:#]/g, '');
@@ -2046,7 +2108,7 @@
     // 归一化：把横线变体统一为 "-"，再转大写，再去掉非字母数字（便于跨 OCR 噪声比较）
     function normNo(s) {
         return String(s)
-            .replace(/[一二〇—–‒‐‑−－]/g, '-')
+            .replace(/[一二〇—–‒‐‑−－~～·・•]/g, '-')
             .toUpperCase()
             .replace(/[^A-Z0-9]/g, '');
     }
@@ -2125,7 +2187,7 @@
     // 比“在噪声文本里正则抠编号”稳得多。实测对打碎的 GYCG-HF26010-0X 由 0/4 提升到 4/4。
     function locateByBTable(ocrText, bList) {
         if (!ocrText || !bList || !bList.length) return null;
-        const text = String(ocrText).replace(/：/g, ':').replace(/　/g, ' ').replace(/[－—–‐―一]/g, '-');
+        const text = String(ocrText).replace(/：/g, ':').replace(/　/g, ' ').replace(/[一二〇—–‒‐‑−－~～·・•]/g, '-');
 
         // 策略 A：滑动窗口模糊匹配 —— 抽全文字母数字片段，拼相邻 1~6 段与每个 B 表编号比编辑距离
         const normToks = (text.match(/[A-Za-z0-9]+/g) || []).map(normNo).filter(Boolean);
@@ -2556,15 +2618,17 @@
                             console.log(`${tag} [${label}] OCR 文本:\n`, text);
 
                             // 优先：空间锚定（用 word 坐标找标签右侧的编号，最稳）
+                            // 注意：即使空间锚定命中也继续跑正则——Windows OCR 偶尔会把
+                            // 长编号 "GYCG-HF26010-19" 视觉上断到下一行，空间锚定可能只拼到 "GYCG"，
+                            // 此时同区域 OCR 文本里通过 extractContractNo 的跨行续接能拼出完整编号
                             if (words.length) {
                                 const sp = extractByWordLayout(words);
                                 if (sp && sp.no) {
                                     candidates.push({ no: sp.no, source: label + '·' + sp.method, conf, raw: text, method: sp.method });
                                     console.log(`%c${tag} ✓ [${label}] 空间锚定命中 [${sp.no}] via ${sp.method}`, 'color:#059669;font-weight:bold');
-                                    return { conf, text, words };
                                 }
                             }
-                            // 退化：在 OCR 全文上跑正则
+                            // 兜底：在 OCR 全文上跑正则（含跨行连字符续接）
                             const r = extractContractNo(text);
                             console.log(`${tag} [${label}] 正则匹配尝试:`, r.tries);
                             if (r.no) {
@@ -2623,22 +2687,38 @@
 
                     // === 候选投票：归一化后哪个值出现次数最多就用哪个；并列则取置信度最高的 ===
                     if (candidates.length) {
-                        // "空间锚定" 来源的候选权重 ×3（坐标命中比正则匹配可信度高得多）
-                        const weightOf = (c) => (c.source && c.source.indexOf('空间锚定') >= 0) ? 3 : 1;
+                        // "看起来完整"的编号定义：含字母 + 至少 4 位数字（电话/日期/短前缀如 GYCG 不满足）
+                        // 空间锚定加权 ×3 仅对完整编号生效——否则被切碎的 "GYCG" 会因 ×3 压过其它策略给出的完整 "GYCG-HF26010-19"
+                        const looksComplete = (no) => /[A-Za-z]/.test(no) && /\d{4,}/.test(String(no).replace(/[\s\-\/_.]/g, ''));
+                        // 弱兜底标记：method 为单纯 "pattern"（无标签上下文）→ 极易抓到产品型号，要降权
+                        const isWeakPattern = (c) => c.method === 'pattern';
+                        const weightOf = (c) => {
+                            if (isWeakPattern(c)) return 0.3;     // 远离标签的字母数字串：极弱
+                            if (c.source && c.source.indexOf('空间锚定') >= 0 && looksComplete(c.no)) return 3;
+                            return 1;
+                        };
                         const tally = {};
                         for (const c of candidates) {
                             const k = normNo(c.no);
-                            if (!tally[k]) tally[k] = { count: 0, weight: 0, bestConf: 0, sample: c.no, anchored: false };
+                            if (!tally[k]) tally[k] = { count: 0, weight: 0, bestConf: 0, sample: c.no, anchored: false, weakOnly: true };
                             tally[k].count++;
                             tally[k].weight += weightOf(c);
                             tally[k].bestConf = Math.max(tally[k].bestConf, c.conf || 0);
                             if (weightOf(c) > 1) tally[k].anchored = true;
+                            if (!isWeakPattern(c)) tally[k].weakOnly = false;
+                            // 对同一归一化键，保留可读性更好的样本：完整>短，长>短
+                            if (looksComplete(c.no) && (!looksComplete(tally[k].sample) || c.no.length > tally[k].sample.length)) {
+                                tally[k].sample = c.no;
+                            }
                         }
                         // 若提供了 B 表，候选先经 correctByList 校正后再投票
+                        // 弱 pattern 候选必须能在 B 表里找到归宿（fix 命中），否则丢弃——
+                        // 这样 RTL8821CE-VC-CG 这种产品型号就拿不到票了
                         if (bNoList && bNoList.length) {
                             const tally2 = {};
                             for (const c of candidates) {
                                 const fix = correctByList(c.no, bNoList);
+                                if (isWeakPattern(c) && !fix) continue;       // 弱兜底必须靠 B 表确认
                                 const final = fix ? fix.no : c.no;
                                 const k = normNo(final);
                                 if (!tally2[k]) tally2[k] = { count: 0, weight: 0, bestConf: 0, sample: final, fixed: !!fix, anchored: false };
@@ -2660,10 +2740,15 @@
                         if (!contractNo) {
                             const ranked = Object.values(tally).sort((a, b) =>
                                 (b.weight - a.weight) || (b.count - a.count) || (b.bestConf - a.bestConf));
-                            contractNo = ranked[0].sample;
-                            ocrConf = ranked[0].bestConf;
-                            console.log(`${tag} 候选(原始)投票:`, ranked.map(r => ({ no: r.sample, count: r.count, weight: r.weight, anchored: r.anchored })));
-                            console.log(`%c${tag} ★ 原始投票胜出 [${contractNo}]（${ranked[0].count} 票，weight=${ranked[0].weight}）`, 'color:#7c3aed;font-weight:bold');
+                            // 只有弱 pattern 候选时不直接采信——把决定权交给后续 B 表锚定
+                            if (ranked[0] && !ranked[0].weakOnly) {
+                                contractNo = ranked[0].sample;
+                                ocrConf = ranked[0].bestConf;
+                                console.log(`${tag} 候选(原始)投票:`, ranked.map(r => ({ no: r.sample, count: r.count, weight: r.weight, anchored: r.anchored, weakOnly: r.weakOnly })));
+                                console.log(`%c${tag} ★ 原始投票胜出 [${contractNo}]（${ranked[0].count} 票，weight=${ranked[0].weight}）`, 'color:#7c3aed;font-weight:bold');
+                            } else {
+                                console.warn(`${tag} 候选全部为弱 pattern（远离标签），不直接采信，等待 B 表锚定兜底`, ranked);
+                            }
                         }
                     } else {
                         console.warn(`${tag} ✗ 多策略均未直接命中编号，等待 B 表锚定兜底`);
@@ -2743,7 +2828,7 @@
             log(`识别阶段完成：${totalPages} 页耗时 ${fmtMs(recogMs)}，平均 ${fmtMs(recogMs / Math.max(1, totalPages))}/页`, 'info');
 
             // —— 阶段二：串行拆页 + 打包（pdf-lib 复制原页，保留扫描件原始质量）——
-            logSection('拆分单页并归档打包');
+            logSection('拆分单页并归档打包');g
             const tSplit = performance.now();
             const SUFFIX = '双签';        // 文件名固定后缀
             const usedNames = {};         // 处理同编号重名
