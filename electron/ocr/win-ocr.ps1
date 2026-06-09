@@ -7,11 +7,19 @@
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-[Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
-[Windows.Globalization.Language, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
-[Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
-[Windows.Storage.StorageFile, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
-[Windows.Storage.Streams.RandomAccessStream, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+# Load Windows Runtime assemblies
+try {
+    [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Globalization.Language, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Storage.StorageFile, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Storage.Streams.RandomAccessStream, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Graphics.Imaging.BitmapPixelFormat, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Graphics.Imaging.BitmapAlphaMode, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
+} catch {
+    Write-Host (ConvertTo-Json -Compress -InputObject @{ ready = $false; error = "Failed to load Windows Runtime assemblies: $($_.Exception.Message)" })
+    exit 1
+}
 
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 
@@ -32,12 +40,27 @@ $engineCache = @{}
 function Get-OcrEngine([string]$tag) {
     if ([string]::IsNullOrWhiteSpace($tag)) { $tag = 'zh-Hans-CN' }
     if ($engineCache.ContainsKey($tag)) { return $engineCache[$tag] }
+    
+    # Try exact language first
     $lang = New-Object Windows.Globalization.Language($tag)
     $eng = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
+    
+    if ($null -eq $eng) {
+        # Try simplified Chinese fallback
+        if ($tag -ne 'zh-Hans-CN') {
+            $lang2 = New-Object Windows.Globalization.Language('zh-Hans-CN')
+            $eng = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang2)
+        }
+    }
+    
     if ($null -eq $eng) {
         $eng = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
     }
-    if ($null -eq $eng) { throw "Cannot create OCR engine (missing language pack: $tag)" }
+    
+    if ($null -eq $eng) { 
+        throw "Cannot create OCR engine (missing language pack: $tag). Please install Chinese (Simplified) language pack." 
+    }
+    
     $engineCache[$tag] = $eng
     return $eng
 }
@@ -47,7 +70,21 @@ function Recognize-File([string]$path, [string]$lang) {
     $stream = Await ($sf.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
     try {
         $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
+        
+        # Get software bitmap - Windows OCR works best with Bgra8 format
         $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+        
+        # Convert to Bgra8 premultiplied if needed for better OCR accuracy
+        if ($bitmap.BitmapPixelFormat -ne [Windows.Graphics.Imaging.BitmapPixelFormat]::Bgra8) {
+            $converted = [Windows.Graphics.Imaging.SoftwareBitmap]::Convert(
+                $bitmap, 
+                [Windows.Graphics.Imaging.BitmapPixelFormat]::Bgra8,
+                [Windows.Graphics.Imaging.BitmapAlphaMode]::Premultiplied
+            )
+            $bitmap.Dispose()
+            $bitmap = $converted
+        }
+        
         $eng = Get-OcrEngine $lang
         $result = Await ($eng.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
 
@@ -82,6 +119,7 @@ function Recognize-File([string]$path, [string]$lang) {
         }
     } finally {
         if ($null -ne $stream) { $stream.Dispose() }
+        if ($null -ne $bitmap) { $bitmap.Dispose() }
     }
 }
 

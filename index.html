@@ -2358,10 +2358,34 @@
                             const blob = await new Promise(res => canvas.toBlob(b => res(b), 'image/png'));
                             const buf = await blob.arrayBuffer();
                             const r = await window.feini.ocr.recognizeBuffer(buf, { lang: 'zh-Hans-CN' });
-                            // Windows OCR 不返回 0~100 置信度；用文本长度+词数估一个相对值用于排序
+                            // Windows OCR 不返回 0~100 置信度；用更智能的方式估算
                             const wordCnt = (r.words || []).length;
                             const charCnt = (r.text || '').length;
-                            const pseudoConf = Math.min(95, 50 + Math.min(40, wordCnt) + Math.min(5, charCnt / 50));
+                            const linesCnt = (r.lines || []).length;
+                            
+                            // 增强的置信度计算：考虑文本完整性和结构
+                            let pseudoConf = 40; // 基础分
+                            
+                            // 文本长度加分
+                            if (charCnt > 20) pseudoConf += Math.min(20, charCnt / 10);
+                            if (charCnt > 50) pseudoConf += Math.min(10, (charCnt - 50) / 20);
+                            
+                            // 词数加分
+                            if (wordCnt > 3) pseudoConf += Math.min(15, wordCnt / 2);
+                            if (wordCnt > 10) pseudoConf += 5;
+                            
+                            // 行数加分（表示文本结构化）
+                            if (linesCnt > 2) pseudoConf += Math.min(10, linesCnt);
+                            
+                            // 检查是否包含合同号特征字符
+                            const text = (r.text || '');
+                            if (/[A-Za-z]{2,}/.test(text)) pseudoConf += 5; // 有连续字母
+                            if (/\d{4,}/.test(text)) pseudoConf += 5; // 有连续数字
+                            if (/[-_/]/g.test(text)) pseudoConf += 3; // 有分隔符
+                            
+                            // 上限
+                            pseudoConf = Math.min(98, pseudoConf);
+                            
                             return {
                                 text: r.text || '',
                                 confidence: pseudoConf,
@@ -2644,42 +2668,71 @@
                         }
                     };
 
-                    // === 策略1：整页彩色原图（不做预处理，让 Windows OCR 自适应处理）===
-                    // Windows OCR 自带强大的自适应二值化与方向估计，原图往往比我们手工预处理更稳
+                    // === 策略0：整页灰度模式 + 对比度拉伸（Windows OCR对优化后的灰度图识别更准）===
+                    {
+                        const c = await renderRegion(null, 'gray');
+                        const r = await doOcr(c, '整页-灰度');
+                        if (!ocrRawText || r.text.length > ocrRawText.length) ocrRawText = r.text;
+                    }
+                    
+                    // === 策略1：整页二值化模式（高对比度扫描件）===
+                    {
+                        const c = await renderRegion(null, 'binary');
+                        const r = await doOcr(c, '整页-二值');
+                        if (!ocrRawText || r.text.length > ocrRawText.length) ocrRawText = r.text;
+                    }
+
+                    // === 策略2：整页彩色原图（兜底策略）===
                     {
                         const c = await renderRegion(null, 'raw');
                         const r = await doOcr(c, '整页-原图');
                         if (!ocrRawText || r.text.length > ocrRawText.length) ocrRawText = r.text;
                     }
 
-                    // === 策略2：右上角原图（合同号常出现位置）4× 高分辨率，给小字号扫描件更多笔画信息 ===
+                    // === 策略3：右上角4x高分辨率 + 灰度（合同号常出现位置）===
                     {
                         const cropW = pw1 * 0.55, cropH = ph1 * 0.22;
                         const cropX = pw1 - cropW, cropY = 0;
                         const hiScale = Math.min(4.0, MAX_SIDE / Math.max(cropW, cropH));
-                        const c = await renderRegion({ x: cropX, y: cropY, w: cropW, h: cropH }, 'raw', 0, hiScale);
-                        await doOcr(c, '右上角-原图4x');
+                        const c = await renderRegion({ x: cropX, y: cropY, w: cropW, h: cropH }, 'gray', 0, hiScale);
+                        await doOcr(c, '右上角-4x灰度');
+                    }
+                    
+                    // === 策略4：右上角4x高分辨率 + 二值 ===
+                    {
+                        const cropW = pw1 * 0.55, cropH = ph1 * 0.22;
+                        const cropX = pw1 - cropW, cropY = 0;
+                        const hiScale = Math.min(4.0, MAX_SIDE / Math.max(cropW, cropH));
+                        const c = await renderRegion({ x: cropX, y: cropY, w: cropW, h: cropH }, 'binary', 0, hiScale);
+                        await doOcr(c, '右上角-4x二值');
                     }
 
-                    // === 策略3：顶部整条带 + 二值化（应对扫描件背景污渍） ===
+                    // === 策略5：顶部整条带 + 二值化 ===
                     {
-                        const cropW = pw1, cropH = ph1 * 0.25;
+                        const cropW = pw1, cropH = ph1 * 0.30;
                         const c = await renderRegion({ x: 0, y: 0, w: cropW, h: cropH }, 'binary');
                         await doOcr(c, '顶部条带-二值');
                     }
 
-                    // === 策略4：顶部条带灰度模式（部分扫描件二值化丢笔画，灰度更稳）===
+                    // === 策略6：顶部条带灰度模式 ===
                     {
-                        const cropW = pw1, cropH = ph1 * 0.25;
+                        const cropW = pw1, cropH = ph1 * 0.30;
                         const c = await renderRegion({ x: 0, y: 0, w: cropW, h: cropH }, 'gray');
                         await doOcr(c, '顶部条带-灰度');
                     }
+                    
+                    // === 策略7：左上角区域（某些合同号在左上角）===
+                    {
+                        const cropW = pw1 * 0.50, cropH = ph1 * 0.25;
+                        const c = await renderRegion({ x: 0, y: 0, w: cropW, h: cropH }, 'gray');
+                        await doOcr(c, '左上角-灰度');
+                    }
 
-                    // === 策略5：方向兜底——若以上 4 策略未给出候选，尝试旋转 90/180/270 度 ===
+                    // === 策略8：方向兜底——若以上 7 策略未给出候选，尝试旋转 90/180/270 度 ===
                     if (candidates.length === 0) {
                         for (const rot of [90, 180, 270]) {
-                            const c = await renderRegion(null, 'raw', rot);
-                            const r = await doOcr(c, `整页-旋转${rot}°`);
+                            const c = await renderRegion(null, 'gray', rot);
+                            const r = await doOcr(c, `整页-旋转${rot}°-灰度`);
                             if (r.text && r.text.length > ocrRawText.length) ocrRawText = r.text;
                             if (candidates.length) break;
                         }
