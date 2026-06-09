@@ -899,6 +899,15 @@
                     <div class="toggle-thumb"></div>
                 </div>
             </label>
+
+            <label class="prank-toggle-wrap" title="启用后，进入页面时自动预加载 tesseract.js 模型（约30MB），避免首次识别时等待">
+                <div class="prank-toggle-label"><span>⚡</span>预加载模型</div>
+                <div class="toggle-switch">
+                    <input type="checkbox" id="preloadOcrToggle" onchange="savePreloadOcrToggle()">
+                    <div class="toggle-track"></div>
+                    <div class="toggle-thumb"></div>
+                </div>
+            </label>
         </div>
     </div>
 
@@ -951,6 +960,91 @@
     function isWindowsOcrEnabled() {
         return document.getElementById('winOcrToggle').checked;
     }
+
+    // --- Tesseract.js 预加载开关 ---
+    let preloadedWorkers = null;  // 全局缓存预加载的 workers
+    let preloadProgress = { loading: false, complete: false, error: null };
+
+    function savePreloadOcrToggle() {
+        const checked = document.getElementById('preloadOcrToggle').checked;
+        localStorage.setItem('preloadOcrModel', checked ? '1' : '0');
+        log(`已${checked ? '启用' : '禁用'} OCR 模型预加载（${checked ? '页面加载时自动下载模型' : '首次使用时才下载'}）`, 'info');
+
+        if (checked && !preloadProgress.loading && !preloadProgress.complete) {
+            // 用户刚启用，立即开始预加载
+            startPreloadOcrModel();
+        }
+    }
+
+    function initPreloadOcrToggle() {
+        const saved = localStorage.getItem('preloadOcrModel');
+        // 默认关闭（false），避免自动消耗流量
+        const shouldPreload = saved === '1';
+        document.getElementById('preloadOcrToggle').checked = shouldPreload;
+
+        // 如果启用了预加载，在页面加载完成后开始
+        if (shouldPreload) {
+            startPreloadOcrModel();
+        }
+    }
+
+    function isPreloadEnabled() {
+        return document.getElementById('preloadOcrToggle').checked;
+    }
+
+    // 开始预加载 Tesseract.js 模型
+    async function startPreloadOcrModel() {
+        // 如果已经在加载或已完成，或者没有 Tesseract，跳过
+        if (preloadProgress.loading || preloadProgress.complete || !window.Tesseract) {
+            return;
+        }
+
+        // 如果在 EXE 环境且启用了 Windows OCR，不需要预加载
+        if (window.feini && window.feini.ocr && isWindowsOcrEnabled()) {
+            log('已启用 Windows OCR，跳过 tesseract.js 模型预加载', 'info');
+            return;
+        }
+
+        preloadProgress.loading = true;
+        preloadProgress.error = null;
+
+        log('⚡ 开始预加载 tesseract.js 模型（后台进行，不影响其他操作）...', 'info');
+
+        try {
+            const cores = navigator.hardwareConcurrency || 4;
+            const POOL = Math.min(4, Math.max(2, Math.floor(cores / 2)));
+
+            const createWorkerWithProgress = (index) => {
+                return Tesseract.createWorker(['chi_sim', 'eng'], 1, {
+                    logger: (m) => {
+                        if (m.status !== 'recognizing text' && typeof m.progress === 'number' && m.progress < 1) {
+                            const pct = Math.round(m.progress * 100);
+                            // 只在关键进度点输出日志，避免刷屏
+                            if (pct % 25 === 0 || pct === 100) {
+                                log(`预加载进度 [Worker ${index + 1}/${POOL}]: ${m.status} ${pct}%`, 'info');
+                            }
+                        }
+                    },
+                });
+            };
+
+            const workers = [];
+            for (let i = 0; i < POOL; i++) {
+                const worker = await createWorkerWithProgress(i);
+                workers.push(worker);
+            }
+
+            preloadedWorkers = workers;
+            preloadProgress.loading = false;
+            preloadProgress.complete = true;
+
+            log(`✓ OCR 模型预加载完成！已准备 ${POOL} 个 worker，首次识别将无需等待`, 'success');
+        } catch (error) {
+            preloadProgress.loading = false;
+            preloadProgress.error = error.message;
+            log(`⚠ OCR 模型预加载失败：${error.message}，首次使用时将重新加载`, 'warning');
+        }
+    }
     function showPrankLoading() {
         const overlay = document.getElementById('globalLoading');
         const bar = document.getElementById('glProgressBar');
@@ -989,7 +1083,7 @@
             fileInput.dispatchEvent(new Event('change', { bubbles: true }));
         }, false);
     }
-    window.addEventListener('DOMContentLoaded', () => { initDragAndDrop(); initPrankToggle(); initWinOcrToggle(); initArchiveDate(); loadDefaultTemplate(); detectOcrEngine(); initUpdater(); });
+    window.addEventListener('DOMContentLoaded', () => { initDragAndDrop(); initPrankToggle(); initWinOcrToggle(); initPreloadOcrToggle(); initArchiveDate(); loadDefaultTemplate(); detectOcrEngine(); initUpdater(); });
 
     // ============ 归档日期：选择 + 文件名自动解析 ============
     // 全局唯一来源：归档目录命名 / PDF 拆分文件名前缀都从这里取日期
@@ -2446,6 +2540,49 @@
         }
         // —— 路线 2：tesseract.js 兜底（旧版纯网页用法）——
         if (!window.Tesseract) throw new Error('tesseract.js 未加载，无法启动 OCR');
+
+        // 优先使用预加载的 workers（如果可用）
+        if (preloadedWorkers && preloadedWorkers.length && preloadProgress.complete) {
+            log(`▶ 使用 tesseract.js（已预加载，${preloadedWorkers.length} 个 worker 就绪）`, 'success');
+            const workers = preloadedWorkers;
+            const POOL = workers.length;
+
+            // 清空全局缓存，避免重复使用
+            preloadedWorkers = null;
+
+            return {
+                kind: 'tesseract',
+                label: 'tesseract.js (预加载)',
+                poolSize: POOL,
+                workers,
+                recognize: async (canvas, opts) => {
+                    const w = workers[(opts && opts._workerIndex) || 0] || workers[0];
+                    const params = {};
+                    if (opts && opts.singleLine) params.tessedit_pageseg_mode = '7';
+                    if (opts && opts.psm) params.tessedit_pageseg_mode = String(opts.psm);
+                    if (opts && opts.whitelist) params.tessedit_char_whitelist = opts.whitelist;
+                    if (Object.keys(params).length) await w.setParameters(params);
+                    try {
+                        const { data } = await w.recognize(canvas);
+                        return {
+                            text: data.text || '',
+                            confidence: data.confidence || 0,
+                            words: data.words || [],
+                        };
+                    } finally {
+                        if (Object.keys(params).length) {
+                            try { await w.setParameters({ tessedit_pageseg_mode: '3', tessedit_char_whitelist: '' }); }
+                            catch (_) {}
+                        }
+                    }
+                },
+                terminate: async () => {
+                    await Promise.all(workers.map(w => w.terminate().catch(() => {})));
+                },
+            };
+        }
+
+        // 未预加载，即时创建
         log('▶ 使用 tesseract.js（浏览器内 OCR），首次会下载中文模型', 'info');
         const POOL = Math.min(4, Math.max(2, Math.floor(cores / 2)));
         const createOne = (showLoad) => Tesseract.createWorker(['chi_sim', 'eng'], 1, {
