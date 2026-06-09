@@ -890,6 +890,15 @@
             <button id="btnPdfSplit" class="btn btn-pdf" onclick="startPdfSplit()">
                 <div class="spinner" id="loadingSpinnerPdf"></div><span id="btnTextPdf">🔍 识别并拆分 PDF</span>
             </button>
+
+            <label class="prank-toggle-wrap" title="在 EXE 版本中控制是否使用 Windows 系统 OCR（默认关闭使用 tesseract.js）">
+                <div class="prank-toggle-label"><span>🪟</span>Windows OCR</div>
+                <div class="toggle-switch">
+                    <input type="checkbox" id="winOcrToggle" onchange="saveWinOcrToggle()">
+                    <div class="toggle-track"></div>
+                    <div class="toggle-thumb"></div>
+                </div>
+            </label>
         </div>
     </div>
 
@@ -924,6 +933,23 @@
     function initPrankToggle() {
         const saved = localStorage.getItem('prankLoading');
         document.getElementById('prankToggle').checked = saved === null ? true : saved === '1';
+    }
+
+    // --- Windows OCR 开关 ---
+    function saveWinOcrToggle() {
+        const checked = document.getElementById('winOcrToggle').checked;
+        localStorage.setItem('useWindowsOcr', checked ? '1' : '0');
+        log(`已${checked ? '启用' : '禁用'} Windows OCR（${checked ? '将使用系统 OCR' : '将使用 tesseract.js'}）`, 'info');
+        // 重新检测并更新提示
+        detectOcrEngine();
+    }
+    function initWinOcrToggle() {
+        const saved = localStorage.getItem('useWindowsOcr');
+        // 默认关闭（false），用户需要手动开启
+        document.getElementById('winOcrToggle').checked = saved === '1';
+    }
+    function isWindowsOcrEnabled() {
+        return document.getElementById('winOcrToggle').checked;
     }
     function showPrankLoading() {
         const overlay = document.getElementById('globalLoading');
@@ -963,7 +989,7 @@
             fileInput.dispatchEvent(new Event('change', { bubbles: true }));
         }, false);
     }
-    window.addEventListener('DOMContentLoaded', () => { initDragAndDrop(); initPrankToggle(); initArchiveDate(); loadDefaultTemplate(); detectOcrEngine(); initUpdater(); });
+    window.addEventListener('DOMContentLoaded', () => { initDragAndDrop(); initPrankToggle(); initWinOcrToggle(); initArchiveDate(); loadDefaultTemplate(); detectOcrEngine(); initUpdater(); });
 
     // ============ 归档日期：选择 + 文件名自动解析 ============
     // 全局唯一来源：归档目录命名 / PDF 拆分文件名前缀都从这里取日期
@@ -1186,13 +1212,22 @@
     async function detectOcrEngine() {
         const hint = document.getElementById('ocrEngineHint');
         if (!hint) return;
+
+        // 检查用户设置
+        const useWindowsOcr = isWindowsOcrEnabled();
+
         if (window.feini && window.feini.ocr) {
             try {
                 const st = await window.feini.ocr.status();
                 if (st && st.ok) {
                     const langs = (st.languages || []).join(' / ') || 'zh-Hans-CN';
-                    hint.innerHTML = `🚀 OCR 引擎：<b>Windows 系统 OCR</b>（${langs}） · 离线 · 速度快`;
-                    hint.style.color = '#059669';
+                    if (useWindowsOcr) {
+                        hint.innerHTML = `🚀 OCR 引擎：<b>Windows 系统 OCR</b>（${langs}） · 离线 · 速度快 · <span style="color:#059669">已启用</span>`;
+                        hint.style.color = '#059669';
+                    } else {
+                        hint.innerHTML = `⚠ Windows OCR 可用但<b>已关闭</b>，当前使用 tesseract.js（可在下方开关中启用）`;
+                        hint.style.color = '#f59e0b';
+                    }
                     return;
                 }
                 hint.innerHTML = `⚠ Windows OCR 不可用：${st && st.error || '未知'}，将使用 tesseract.js`;
@@ -2340,8 +2375,11 @@
     // ==========================================
     async function initOcrAdapter(btnEl) {
         const cores = navigator.hardwareConcurrency || 4;
-        // —— 路线 1：Windows.Media.Ocr（Electron 环境）——
-        if (window.feini && window.feini.ocr) {
+        // 检查用户是否启用了 Windows OCR 开关
+        const useWindowsOcr = isWindowsOcrEnabled();
+
+        // —— 路线 1：Windows.Media.Ocr（Electron 环境 且 用户已启用）——
+        if (useWindowsOcr && window.feini && window.feini.ocr) {
             try {
                 const st = await window.feini.ocr.status();
                 if (st && st.ok) {
@@ -2401,6 +2439,10 @@
             } catch (e) {
                 log(`Windows OCR 初始化异常：${e.message}，将退回 tesseract.js`, 'warning');
             }
+        } else if (useWindowsOcr && !window.feini) {
+            log('Windows OCR 开关已启用，但当前非 EXE 环境，将使用 tesseract.js', 'warning');
+        } else if (!useWindowsOcr && window.feini && window.feini.ocr) {
+            log('Windows OCR 开关已关闭，将使用 tesseract.js（可在按钮旁开关中启用 Windows OCR）', 'info');
         }
         // —— 路线 2：tesseract.js 兜底（旧版纯网页用法）——
         if (!window.Tesseract) throw new Error('tesseract.js 未加载，无法启动 OCR');
